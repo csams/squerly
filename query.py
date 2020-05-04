@@ -72,65 +72,55 @@ class Queryable:
         name_part, value_part = key
         value_query = desugar(value_part) if value is not None else TRUE
 
-        if isinstance(value, dict):
-            if name_part is None:
-                results = [v for v in value.values() if value_query.test(v)]
-                return Queryable(results, parent=self)
-
-            if not callable(name_part):
+        if name_part is None:
+            def helper(val):
+                return [v for v in val.values() if value_query.test(v)]
+        elif not callable(name_part):
+            def helper(val):
                 try:
-                    v = value[name_part]
-                    return Queryable([v], parent=self) if value_query.test(v) else Queryable([], parent=self)
+                    v = val[name_part]
+                    return [v] if value_query.test(v) else []
                 except:
-                    return Queryable([], parent=self)
-
+                    return []
+        else:
             name_query = desugar(name_part)
-            results = [v for k, v in value.items() if name_query.test(k) and value_query.test(v)]
-            return Queryable(results, parent=self)
+
+            def helper(val):
+                results = [v for k, v in val.items() if name_query.test(k) and value_query.test(v)]
+                return results
+
+        if isinstance(value, dict):
+            return Queryable(helper(value), parent=self)
 
         elif isinstance(value, list):
             results = []
             for i in value:
-                r = self._handle_tuple(key, i).value
-                if r:
-                    results.extend(r)
+                results.extend(helper(i))
             return Queryable(results, parent=self)
 
     def _handle_name_query(self, key, value):
-#         if key is None:
-#             def helper(val):
-#                 return list(val.values())
-#         elif not callable(key):
-#             def helper(val):
-#                 try:
-#                     return [val[key]]
-#                 except:
-#                     return []
-#         else:
-#             name_query = desugar(key)
-#             def helper(val):
-#                 results = [v for k, v in value.items() if name_query.test(k)]
-#                 return Queryable(results, parent=self)
-        if isinstance(value, dict):
-            if key is None:
-                return Queryable(list(value.values()), parent=self)
-
-            if not callable(key):
+        if key is None:
+            def helper(val):
+                return list(val.values())
+        elif not callable(key):
+            def helper(val):
                 try:
-                    return Queryable([value[key]], parent=self)
+                    return [val[key]]
                 except:
-                    return Queryable([], parent=self)
-
+                    return []
+        else:
             name_query = desugar(key)
-            results = [v for k, v in value.items() if name_query.test(k)]
-            return Queryable(results, parent=self)
+
+            def helper(val):
+                return [v for k, v in val.items() if name_query.test(k)]
+
+        if isinstance(value, dict):
+            return Queryable(helper(value), parent=self)
 
         if isinstance(value, list):
             results = []
             for i in value:
-                r = self._handle_name_query(key, i).value
-                if r:
-                    results.extend(r)
+                results.extend(helper(i))
             return Queryable(results, parent=self)
 
         return Queryable([], parent=self)
