@@ -151,9 +151,9 @@ class _Queryable:
     def _handle_tuple(self, key):
         value = self.value
         name_part, value_part = key
-        value_query = _desugar(value_part) if value is not None else TRUE
+        value_query = _desugar(value_part) if value is not NONE else TRUE
 
-        if name_part is None:
+        if name_part is NONE:
             def query(val):
                 return [v for v in val.values() if value_query.test(v)]
         elif not callable(name_part):
@@ -210,19 +210,21 @@ class _Queryable:
         if callable(query):
             return self._handle_callable(query)
 
+        return self._handle_dict_query(DictQuery(query))
+
     def __repr__(self):
         return f"_Queryable({pformat(self.value)})"
 
 
 class DictQuery(Boolean):
     """ Only use in where queries. """
-    def __init__(self, name_part, value_part=None):
+    def __init__(self, name_part, value_part=NONE):
         self.name_part = name_part
-        self.value_query = _desugar(value_part) if value_part is not None else TRUE
+        self.value_query = _desugar(value_part) if value_part is not NONE else TRUE
 
     def test(self, value):
         try:
-            if self.name_part is None:
+            if self.name_part is NONE:
                 return any(self.value_query.test(v) for v in value.values())
 
             if not callable(self.name_part):
@@ -240,7 +242,10 @@ q = DictQuery
 
 
 def _convert(data, parent=None):
-
+    """
+    Convert nest of dicts and lists into Dicts and Lists that contain
+    pointers to their parents.
+    """
     if isinstance(data, dict):
         d = Dict(parents=[parent] if parent is not None else [])
         d.update({k: _convert(v, parent=d) for k, v in data.items()})
