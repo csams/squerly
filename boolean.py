@@ -41,8 +41,8 @@ class Boolean:
     def __or__(self, other):
         return Any(self, other)
 
-    def __invert__(self, other):
-        return Not(other)
+    def __invert__(self):
+        return Not(self)
 
 
 class Any(Boolean):

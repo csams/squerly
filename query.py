@@ -78,17 +78,6 @@ class _Queryable:
 
     @property
     def parents(self):
-        if isinstance(self.value, Dict):
-            return _Queryable(self.value.parents)
-
-        if self.value.parents:
-            return self.value.parents
-
-        seen = set()
-        for i in self.value:
-            seen |= set(i.parents)
-        return _Queryable(List(seen))
-
         gp = []
         seen = set()
         for p in self.value.parents:
@@ -193,23 +182,31 @@ class _Queryable:
         return self._handle_name_query(key)
 
     def _handle_where_callable(self, func):
-        value = self.value
-
         # In this function, func is passed a _Queryable instance instead of raw
         # values like in handle_where_query. This enables where queries that
         # look deep into the structure of each item.
-        if isinstance(value, Dict):
-            return self if func(self) else _Queryable(Dict())
+        def inner(val):
+            if isinstance(val, Dict):
+                if func(self):
+                    return List([val], parents=val.parents)
+                return List()
 
-        if isinstance(value, List):
-            results = List()
-            for i in value:
-                if func(_Queryable(i)):
-                    results.parents.extend(i.parents)
-                    results.append(i)
-            return results
+            if isinstance(val, List):
+                results = List()
+                for i in val:
+                    if isinstance(i, List):
+                        # handle nested lists
+                        r = inner(i)
+                        if r:
+                            results.extend(r)
+                    elif func(_Queryable(i)):
+                        results.append(i)
+                if results:
+                    results.parents.append(val)
+                return results
 
-        return _Queryable(List())
+            return List()
+        return _Queryable(inner(self.value))
 
     def _handle_where_query(self, query):
         def inner(val):
@@ -222,6 +219,7 @@ class _Queryable:
                 results = List()
                 for i in val:
                     if isinstance(i, List):
+                        # handle nested lists
                         r = inner(i)
                         if r:
                             results.extend(r)
