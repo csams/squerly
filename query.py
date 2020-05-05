@@ -131,7 +131,7 @@ class _Queryable:
 
         return _Queryable(inner(self.value))
 
-    def _handle_tuple(self, key):
+    def _handle_tuple_query(self, key):
         value = self.value
         name_part, value_part = key
         value_query = _desugar(value_part) if value is not NONE else TRUE
@@ -176,42 +176,15 @@ class _Queryable:
     def __getitem__(self, key):
         # support for data[(name_query, value_query)]
         if isinstance(key, tuple):
-            return self._handle_tuple(key)
+            return self._handle_tuple_query(key)
 
         # support for data[name_query]
         return self._handle_name_query(key)
 
-    def _handle_where_callable(self, func):
-        # In this function, func is passed a _Queryable instance instead of raw
-        # values like in handle_where_query. This enables where queries that
-        # look deep into the structure of each item.
-        def inner(val):
-            if isinstance(val, Dict):
-                if func(self):
-                    return List([val], parents=val.parents)
-                return List()
-
-            if isinstance(val, List):
-                results = List()
-                for i in val:
-                    if isinstance(i, List):
-                        # handle nested lists
-                        r = inner(i)
-                        if r:
-                            results.extend(r)
-                    elif func(_Queryable(i)):
-                        results.append(i)
-                if results:
-                    results.parents.append(val)
-                return results
-
-            return List()
-        return _Queryable(inner(self.value))
-
     def _handle_where_query(self, query):
         def inner(val):
             if isinstance(val, Dict):
-                if query.test(val):
+                if query(val):
                     return List([val], parents=val.parents)
                 return List()
 
@@ -223,7 +196,7 @@ class _Queryable:
                         r = inner(i)
                         if r:
                             results.extend(r)
-                    elif query.test(i):
+                    elif query(i):
                         results.append(i)
                 if results:
                     results.parents.append(val)
@@ -240,23 +213,34 @@ class _Queryable:
 
         # if value is defined, the caller didn't bother to make a WhereQuery
         if value is not NONE:
-            return self._handle_where_query(WhereQuery(query, value))
+            query = WhereQuery(query, value)
+
+            def runquery(val):
+                return query.test(val)
 
         # query already contains WhereQuery instances. We check for Boolean
         # because query might some combination of WhereQuerys.
-        if isinstance(query, Boolean):
-            return self._handle_where_query(query)
+        elif isinstance(query, Boolean):
+            def runquery(val):
+                return query.test(val)
 
         # value is not defined, and query is not a WhereQuery. If query is a
         # callable, it's just a regular function or lambda. We assume the
         # caller wants to manually inspect each item.
-        if callable(query):
-            return self._handle_where_callable(query)
+        elif callable(query):
+            def runquery(val):
+                return query(_Queryable(val))
 
         # this handles the case where the caller wants to simply check for the
         # existence of a key without needing to construct a WhereQuery. Because
         # of the above checks, query here can be only a primitive value.
-        return self._handle_where_query(WhereQuery(query))
+        else:
+            query = WhereQuery(query)
+
+            def runquery(val):
+                return query.test(val)
+
+        return self._handle_where_query(runquery)
 
     def __repr__(self):
         return f"_Queryable({pformat(self.value)})"
