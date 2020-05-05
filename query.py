@@ -51,10 +51,10 @@ class _Queryable:
         self.value = value
 
     def get_keys(self):
-        if isinstance(self.value, dict):
+        if isinstance(self.value, Dict):
             return sorted(self.value)
 
-        if isinstance(self.value, list):
+        if isinstance(self.value, List):
             keys = []
             for i in self.value:
                 try:
