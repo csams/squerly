@@ -6,9 +6,10 @@ from boolean import Boolean, eq, pred, TRUE
 __all__ = [
     "CollectionBase",
     "Dict",
-    "DictQuery",
     "List",
+    "NONE",
     "Queryable",
+    "WhereQuery",
     "q"
 ]
 
@@ -29,6 +30,8 @@ class CollectionBase:
         self.parents = parents or []
         self.uid = uuid.uuid4()
 
+    # hash and eq are defined so we can deduplicate as we chase down data
+    # structure roots.
     def __hash__(self):
         return hash(self.uid)
 
@@ -37,10 +40,12 @@ class CollectionBase:
 
 
 class List(CollectionBase, list):
+    """ A list that remembers the data structure to which it belongs. """
     pass
 
 
 class Dict(CollectionBase, dict):
+    """ A dict that remembers the data structure to which it belongs. """
     pass
 
 
@@ -73,6 +78,17 @@ class _Queryable:
 
     @property
     def parents(self):
+        if isinstance(self.value, Dict):
+            return _Queryable(self.value.parents)
+
+        if self.value.parents:
+            return self.value.parents
+
+        seen = set()
+        for i in self.value:
+            seen |= set(i.parents)
+        return _Queryable(List(seen))
+
         gp = []
         seen = set()
         for p in self.value.parents:
@@ -83,9 +99,20 @@ class _Queryable:
         return _Queryable(List(self.value.parents, parents=gp))
 
     def __getattr__(self, key):
+        # allow dot access traversal for simple key names.
         return self.__getitem__(key)
 
     def __dir__(self):
+        # jedi in ipython doesn't tab complete when __getattr__ is defined
+        # b/c it could execute arbitrary code. To get around it, disable
+        # jedi.
+
+        # import IPython
+        # from traitlets.config.loader import Config
+
+        # IPython.core.completer.Completer.use_jedi = False
+        # c = Config()
+        # IPython.start_ipython([], user_ns=locals(), config=c)
         return self.get_keys()
 
     def __len__(self):
@@ -94,38 +121,7 @@ class _Queryable:
     def __bool__(self):
         return bool(self.value)
 
-    def _handle_callable(self, func):
-        value = self.value
-        if isinstance(value, Dict):
-            return self if func(self) else _Queryable(Dict())
-
-        if isinstance(value, List):
-            results = List()
-            for i in value:
-                if func(_Queryable(i)):
-                    results.parents.extend(i.parents)
-                    results.append(i)
-            return results
-
-        return _Queryable(List())
-
-    def _handle_dict_query(self, key):
-        value = self.value
-        if isinstance(value, Dict):
-            return self if key.test(value) else _Queryable(Dict())
-
-        if isinstance(value, List):
-            results = List()
-            for i in value:
-                if key.test(i):
-                    results.parents.extend(i.parents)
-                    results.append(i)
-            return _Queryable(results)
-
-        return _Queryable(List())
-
     def _handle(self, query):
-        value = self.value
 
         def inner(val):
             if isinstance(val, Dict):
@@ -137,16 +133,14 @@ class _Queryable:
             elif isinstance(val, List):
                 results = List()
                 for i in val:
-                    if isinstance(i, List):
-                        return inner(i)
-                    else:
-                        r = query(i)
-                        if r:
-                            results.parents.append(i)
-                            results.extend(r)
+                    r = inner(i) if isinstance(i, List) else query(i)
+                    if r:
+                        results.parents.append(i)
+                        results.extend(r)
                 return results
             return List()
-        return _Queryable(inner(value))
+
+        return _Queryable(inner(self.value))
 
     def _handle_tuple(self, key):
         value = self.value
@@ -173,7 +167,7 @@ class _Queryable:
         return self._handle(query)
 
     def _handle_name_query(self, key):
-        if key is None:
+        if key is NONE:
             def query(val):
                 return list(val.values())
         elif not callable(key):
@@ -191,54 +185,106 @@ class _Queryable:
         return self._handle(query)
 
     def __getitem__(self, key):
+        # support for data[(name_query, value_query)]
         if isinstance(key, tuple):
             return self._handle_tuple(key)
 
+        # support for data[name_query]
         return self._handle_name_query(key)
+
+    def _handle_where_callable(self, func):
+        value = self.value
+
+        # In this function, func is passed a _Queryable instance instead of raw
+        # values like in handle_where_query. This enables where queries that
+        # look deep into the structure of each item.
+        if isinstance(value, Dict):
+            return self if func(self) else _Queryable(Dict())
+
+        if isinstance(value, List):
+            results = List()
+            for i in value:
+                if func(_Queryable(i)):
+                    results.parents.extend(i.parents)
+                    results.append(i)
+            return results
+
+        return _Queryable(List())
+
+    def _handle_where_query(self, query):
+        def inner(val):
+            if isinstance(val, Dict):
+                if query.test(val):
+                    return List([val], parents=val.parents)
+                return List()
+
+            if isinstance(val, List):
+                results = List()
+                for i in val:
+                    if isinstance(i, List):
+                        r = inner(i)
+                        if r:
+                            results.extend(r)
+                    elif query.test(i):
+                        results.append(i)
+                if results:
+                    results.parents.append(val)
+                return results
+
+            return List()
+        return _Queryable(inner(self.value))
 
     def where(self, query, value=NONE):
         """
-        Accepts DictQuery instances, combinations of DictQuery instances, or
+        Accepts WhereQuery instances, combinations of WhereQuery instances, or
         a callable that will be passed a Queryable version of each item.
         """
+
+        # if value is defined, the caller didn't bother to make a WhereQuery
         if value is not NONE:
-            return self._handle_dict_query(DictQuery(query, value))
+            return self._handle_where_query(WhereQuery(query, value))
 
+        # query already contains WhereQuery instances. We check for Boolean
+        # because query might some combination of WhereQuerys.
         if isinstance(query, Boolean):
-            return self._handle_dict_query(query)
+            return self._handle_where_query(query)
 
+        # value is not defined, and query is not a WhereQuery. If query is a
+        # callable, it's just a regular function or lambda. We assume the
+        # caller wants to manually inspect each item.
         if callable(query):
-            return self._handle_callable(query)
+            return self._handle_where_callable(query)
 
-        return self._handle_dict_query(DictQuery(query))
+        # this handles the case where the caller wants to simply check for the
+        # existence of a key without needing to construct a WhereQuery. Because
+        # of the above checks, query here can be only a primitive value.
+        return self._handle_where_query(WhereQuery(query))
 
     def __repr__(self):
         return f"_Queryable({pformat(self.value)})"
 
 
-class DictQuery(Boolean):
+class WhereQuery(Boolean):
     """ Only use in where queries. """
     def __init__(self, name_part, value_part=NONE):
-        self.name_part = name_part
-        self.value_query = _desugar(value_part) if value_part is not NONE else TRUE
+        value_query = _desugar(value_part) if value_part is not NONE else TRUE
+
+        if name_part is NONE:
+            self.query = lambda val: any(value_query.test(v) for v in val.values())
+        elif not callable(name_part):
+            self.query = lambda val: value_query.test(val[name_part]) if name_part in val else False
+        else:
+            name_query = _desugar(name_part)
+            self.query = lambda val: any(name_query.test(k) and value_query.test(v) for k, v in val.items())
 
     def test(self, value):
         try:
-            if self.name_part is NONE:
-                return any(self.value_query.test(v) for v in value.values())
-
-            if not callable(self.name_part):
-                if self.name_part not in value:
-                    return False
-                return self.value_query.test(value[self.name_part])
-
-            self.name_query = _desugar(self.name_part)
-            return any(self.name_query.test(k) and self.value_query.test(v) for k, v in value.items())
+            return self.query(value)
         except:
             return False
 
 
-q = DictQuery
+q = WhereQuery
 
 
 def _convert(data, parent=None):
