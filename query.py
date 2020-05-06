@@ -5,6 +5,7 @@ from boolean import Boolean, eq, pred, TRUE
 
 __all__ = [
     "CollectionBase",
+    "convert",
     "Dict",
     "List",
     "NONE",
@@ -14,14 +15,6 @@ __all__ = [
 ]
 
 NONE = object()
-
-
-def _desugar(x):
-    if isinstance(x, Boolean):
-        return x
-    if callable(x):
-        return pred(x)
-    return eq(x)
 
 
 class CollectionBase:
@@ -36,7 +29,10 @@ class CollectionBase:
         return hash(self.uid)
 
     def __eq__(self, other):
-        return self.uid == other.uid
+        try:
+            return self.uid == other.uid
+        except:
+            return False
 
 
 class List(CollectionBase, list):
@@ -49,6 +45,33 @@ class Dict(CollectionBase, dict):
     pass
 
 
+def _desugar_part(x):
+    if isinstance(x, Boolean):
+        return x
+    if callable(x):
+        return pred(x)
+    return eq(x)
+
+
+def get_roots(data):
+    results = List()
+    seen = set()
+
+    def inner(d):
+        if not d.parents and d not in seen:
+            results.append(d)
+            seen.add(d)
+        else:
+            for p in d.parents:
+                if p not in seen:
+                    inner(p)
+                seen.add(p)
+
+    if data.parents:
+        inner(data)
+    return results
+
+
 class _Queryable:
     __slots__ = ["value"]
 
@@ -56,25 +79,21 @@ class _Queryable:
         self.value = value
 
     def get_keys(self):
-        if isinstance(self.value, Dict):
-            return sorted(self.value)
+        keys = []
 
-        if isinstance(self.value, List):
-            keys = []
-            for i in self.value:
-                try:
-                    keys.extend(i.keys())
-                except:
-                    pass
-            return sorted(set(keys))
+        def inner(val):
+            if isinstance(val, Dict):
+                keys.extend(val)
 
-    @property
-    def unique_values(self):
-        return sorted(set(self.value))
+            if isinstance(val, List):
+                for i in val:
+                    try:
+                        keys.extend(i.keys())
+                    except:
+                        inner(i)
 
-    @property
-    def values(self):
-        return sorted(self.value)
+        inner(self.value)
+        return sorted(set(keys))
 
     @property
     def parents(self):
@@ -87,14 +106,48 @@ class _Queryable:
                     seen.add(g)
         return _Queryable(List(self.value.parents, parents=gp))
 
+    @property
+    def unique_values(self):
+        return sorted(set(self.value))
+
+    @property
+    def values(self):
+        return sorted(self.value)
+
+    @property
+    def roots(self):
+        return _Queryable(get_roots(self.value))
+
+    def find(self, *args):
+        results = List()
+        queries = [self._desugar(a) for a in args]
+
+        def run_queries(node):
+            n = node
+            for q in queries:
+                n = n._handle_child_query(q)
+            results.extend(n.value)
+            if n.value:
+                results.parents.extend(n.value.parents)
+
+            if isinstance(node.value, Dict):
+                for i in node.value.values():
+                    if isinstance(i, CollectionBase):
+                        run_queries(_Queryable(i))
+            elif isinstance(node.value, List):
+                for i in node.value:
+                    if isinstance(i, CollectionBase):
+                        run_queries(_Queryable(i))
+        run_queries(self)
+        return _Queryable(results)
+
     def __getattr__(self, key):
-        # allow dot access traversal for simple key names.
+        # allow dot traversal for simple key names.
         return self.__getitem__(key)
 
     def __dir__(self):
-        # jedi in ipython doesn't tab complete when __getattr__ is defined
-        # b/c it could execute arbitrary code. To get around it, disable
-        # jedi.
+        # jedi in doesn't tab complete when __getattr__ is defined b/c it could
+        # execute arbitrary code. So.. throw caution to the wind.
 
         # import IPython
         # from traitlets.config.loader import Config
@@ -110,7 +163,7 @@ class _Queryable:
     def __bool__(self):
         return bool(self.value)
 
-    def _handle(self, query):
+    def _handle_child_query(self, query):
 
         def inner(val):
             if isinstance(val, Dict):
@@ -131,55 +184,97 @@ class _Queryable:
 
         return _Queryable(inner(self.value))
 
-    def _handle_tuple_query(self, key):
+    def _desugar_tuple_query(self, key):
         value = self.value
         name_part, value_part = key
-        value_query = _desugar(value_part) if value is not NONE else TRUE
+        value_query = _desugar_part(value_part) if value is not NONE else TRUE
 
         if name_part is NONE:
             def query(val):
-                return [v for v in val.values() if value_query.test(v)]
+                results = []
+                try:
+                    for v in val.values():
+                        if isinstance(v, list):
+                            results.extend(v)
+                        else:
+                            results.append(v)
+                except:
+                    return []
+                return results
         elif not callable(name_part):
             def query(val):
                 try:
                     v = val[name_part]
-                    return [v] if value_query.test(v) else []
+                    if value_query.test(v):
+                        return v if isinstance(v, list) else [v]
                 except:
                     return []
         else:
-            name_query = _desugar(name_part)
+            name_query = _desugar_part(name_part)
 
             def query(val):
-                results = [v for k, v in val.items() if name_query.test(k) and value_query.test(v)]
+                results = []
+                try:
+                    for k, v in val.items():
+                        if name_query.test(k) and value_query.test(v):
+                            if isinstance(v, list):
+                                results.extend(v)
+                            else:
+                                results.append(v)
+                except:
+                    return []
                 return results
 
-        return self._handle(query)
+        return query
 
-    def _handle_name_query(self, key):
+    def _desugar_name_query(self, key):
         if key is NONE:
             def query(val):
-                return list(val.values())
+                results = []
+                try:
+                    for v in val.values():
+                        if isinstance(v, list):
+                            results.extend(v)
+                        else:
+                            results.append(v)
+                except:
+                    return []
+                return results
         elif not callable(key):
             def query(val):
                 try:
-                    return [val[key]]
+                    r = val[key]
+                    return r if isinstance(r, list) else [r]
                 except:
                     return []
         else:
-            name_query = _desugar(key)
+            name_query = _desugar_part(key)
 
             def query(val):
-                return [v for k, v in val.items() if name_query.test(k)]
+                results = []
+                try:
+                    for k, v in val.items():
+                        if name_query.test(k):
+                            if isinstance(v, list):
+                                results.extend(v)
+                            else:
+                                results.append(v)
+                except:
+                    return []
+                return results
 
-        return self._handle(query)
+        return query
+
+    def _desugar(self, key):
+        if isinstance(key, tuple):
+            # support for data[name_query, value_query]
+            return self._desugar_tuple_query(key)
+        # support for data[name_query]
+        return self._desugar_name_query(key)
 
     def __getitem__(self, key):
-        # support for data[(name_query, value_query)]
-        if isinstance(key, tuple):
-            return self._handle_tuple_query(key)
-
-        # support for data[name_query]
-        return self._handle_name_query(key)
+        query = self._desugar(key)
+        return self._handle_child_query(query)
 
     def _handle_where_query(self, query):
         def inner(val):
@@ -249,14 +344,14 @@ class _Queryable:
 class WhereQuery(Boolean):
     """ Only use in where queries. """
     def __init__(self, name_part, value_part=NONE):
-        value_query = _desugar(value_part) if value_part is not NONE else TRUE
+        value_query = _desugar_part(value_part) if value_part is not NONE else TRUE
 
         if name_part is NONE:
             self.query = lambda val: any(value_query.test(v) for v in val.values())
         elif not callable(name_part):
             self.query = lambda val: value_query.test(val[name_part]) if name_part in val else False
         else:
-            name_query = _desugar(name_part)
+            name_query = _desugar_part(name_part)
             self.query = lambda val: any(name_query.test(k) and value_query.test(v) for k, v in val.items())
 
     def test(self, value):
@@ -269,19 +364,19 @@ class WhereQuery(Boolean):
 q = WhereQuery
 
 
-def _convert(data, parent=None):
+def convert(data, parent=None):
     """
     Convert nest of dicts and lists into Dicts and Lists that contain
     pointers to their parents.
     """
     if isinstance(data, dict):
         d = Dict(parents=[parent] if parent is not None else [])
-        d.update({k: _convert(v, parent=d) for k, v in data.items()})
+        d.update({k: convert(v, parent=d) for k, v in data.items()})
         return d
 
     if isinstance(data, list):
         l = List(parents=[parent] if parent is not None else [])
-        l.extend(_convert(i, parent=l) for i in data)
+        l.extend(convert(i, parent=l) for i in data)
         return l
 
     return data
@@ -294,4 +389,4 @@ def Queryable(data):
     if isinstance(data, CollectionBase):
         return _Queryable(data)
 
-    return _Queryable(_convert(data))
+    return _Queryable(convert(data))
