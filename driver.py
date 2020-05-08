@@ -4,11 +4,11 @@ import re
 import yaml
 
 import queryable  # noqa
-from queryable.models import df, lsof, meminfo, ps, rpms  # noqa
+from queryable.models import df, lsof, lsof2, meminfo, ps, rpms  # noqa
 from queryable import *  # noqa
 from queryable import convert, List, Queryable
 
-__all__ = ["df", "lsof", "meminfo", "ps", "rpms", "analyze"] + queryable.__all__
+__all__ = ["df", "lsof", "lsof2", "meminfo", "ps", "rpms", "analyze"] + queryable.__all__
 
 
 def _get_files(path):
