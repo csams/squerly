@@ -110,7 +110,7 @@ class _Queryable:
     def sum(self):
         return sum(self.value)
 
-    def to_df(self):
+    def to_dataframe(self):
         import pandas
         return pandas.DataFrame(self.value)
 
