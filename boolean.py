@@ -23,6 +23,7 @@ __all__ = [
     "isin",
     "contains",
     "search",
+    "matches",
     "startswith",
     "endswith",
 ]
@@ -121,5 +122,6 @@ isin = pred(flip(operator.contains))
 
 contains = pred(operator.contains)
 search = pred(flip(re.search))
+matches = search
 startswith = pred(str.startswith)
 endswith = pred(str.endswith)

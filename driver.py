@@ -13,20 +13,20 @@ from query import *  # noqa
 __all__ = ["df", "lsof", "meminfo", "ps", "rpms", "analyze"] + boolean.__all__ + query.__all__
 
 
-def _get_all_files(path):
+def _get_files(path):
     with os.scandir(path) as it:
         for ent in it:
             if ent.is_dir(follow_symlinks=False):
-                for pth in _get_all_files(ent.path):
+                for pth in _get_files(ent.path):
                     yield pth
             elif ent.is_file(follow_symlinks=False):
                 yield ent.path
 
 
 def analyze(path, ignore=".*(log|txt)$"):
-    ignore = re.compile(ignore).search
+    ignore = re.compile(ignore).search if ignore else lambda x: False
     results = List()
-    for p in _get_all_files(path):
+    for p in _get_files(path):
         if not ignore(p):
             try:
                 with open(p) as f:

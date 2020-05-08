@@ -1,4 +1,5 @@
 import uuid
+from collections import Counter
 from pprint import pformat
 
 from boolean import Boolean, eq, pred, TRUE
@@ -78,22 +79,40 @@ class _Queryable:
     def __init__(self, value):
         self.value = value
 
-    def get_keys(self):
+    def keys(self):
         keys = []
+        seen = set()
 
         def inner(val):
             if isinstance(val, Dict):
-                keys.extend(val)
+                new = val.keys() - seen
+                keys.extend(new)
+                seen.update(new)
 
             if isinstance(val, List):
                 for i in val:
                     try:
-                        keys.extend(i.keys())
+                        new = i.keys() - seen
+                        keys.extend(new)
+                        seen.update(new)
                     except:
                         inner(i)
 
         inner(self.value)
         return sorted(set(keys))
+
+    def most_common(self, top=None):
+        return Counter(self.value).most_common(top)
+
+    def unique(self):
+        return sorted(set(self.value))
+
+    def sum(self):
+        return sum(self.value)
+
+    def to_df(self):
+        import pandas
+        return pandas.DataFrame(self.value)
 
     @property
     def parents(self):
@@ -107,16 +126,19 @@ class _Queryable:
         return _Queryable(List(self.value.parents, parents=gp))
 
     @property
-    def unique_values(self):
-        return sorted(set(self.value))
-
-    @property
-    def values(self):
-        return sorted(self.value)
-
-    @property
     def roots(self):
         return _Queryable(get_roots(self.value))
+
+    def upto(self, query):
+        cur = self
+        while cur:
+            p = cur.parents
+            if p.parents[query]:
+                if p.value and isinstance(p.value[0], list):
+                    return cur
+                else:
+                    return p
+            cur = p
 
     def find(self, *args):
         results = List()
@@ -126,8 +148,9 @@ class _Queryable:
             n = node
             for q in queries:
                 n = n._handle_child_query(q)
-            results.extend(n.value)
+
             if n.value:
+                results.extend(n.value)
                 results.parents.extend(n.value.parents)
 
             if isinstance(node.value, Dict):
@@ -267,9 +290,7 @@ class _Queryable:
 
     def _desugar(self, key):
         if isinstance(key, tuple):
-            # support for data[name_query, value_query]
             return self._desugar_tuple_query(key)
-        # support for data[name_query]
         return self._desugar_name_query(key)
 
     def __getitem__(self, key):
@@ -277,33 +298,34 @@ class _Queryable:
         return self._handle_child_query(query)
 
     def _handle_where_query(self, query):
+        seen = set()
+
         def inner(val):
-            if isinstance(val, Dict):
-                if query(val):
-                    return List([val], parents=val.parents)
-                return List()
-
-            if isinstance(val, List):
-                results = List()
-                for i in val:
-                    if isinstance(i, List):
-                        # handle nested lists
-                        r = inner(i)
-                        if r:
-                            results.extend(r)
-                    elif query(i):
+            results = List()
+            for i in val:
+                if isinstance(i, List):
+                    r = inner(i)
+                    if r:
                         results.append(i)
-                if results:
-                    results.parents.append(val)
-                return results
+                        for p in i.parents:
+                            if p not in seen:
+                                results.parents.append(p)
+                                seen.add(p)
+                elif query(i):
+                    results.append(i)
+                    for p in i.parents:
+                        if p not in seen:
+                            results.parents.append(p)
+                            seen.add(p)
+            return results
 
-            return List()
         return _Queryable(inner(self.value))
 
     def where(self, query, value=NONE):
         """
         Accepts WhereQuery instances, combinations of WhereQuery instances, or
-        a callable that will be passed a Queryable version of each item.
+        a callable that will be passed a Queryable version of each item. Where
+        queries only make sense against lists.
         """
 
         # if value is defined, the caller didn't bother to make a WhereQuery
