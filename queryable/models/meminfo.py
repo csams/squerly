@@ -1,4 +1,4 @@
-from query import Queryable
+from queryable import Queryable
 
 
 def parse(content):

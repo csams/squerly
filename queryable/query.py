@@ -2,7 +2,7 @@ import uuid
 from collections import Counter
 from pprint import pformat
 
-from boolean import Boolean, eq, pred, TRUE
+from .boolean import Boolean, eq, pred, TRUE
 
 __all__ = [
     "CollectionBase",

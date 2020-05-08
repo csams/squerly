@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-import boolean
 import os
-import query
 import re
 import yaml
 
-from boolean import *  # noqa
-from models import df, lsof, meminfo, ps, rpms  # noqa
-from query import convert, List, Queryable
-from query import *  # noqa
+import queryable  # noqa
+from queryable.models import df, lsof, meminfo, ps, rpms  # noqa
+from queryable import *  # noqa
+from queryable import convert, List, Queryable
 
-__all__ = ["df", "lsof", "meminfo", "ps", "rpms", "analyze"] + boolean.__all__ + query.__all__
+__all__ = ["df", "lsof", "meminfo", "ps", "rpms", "analyze"] + queryable.__all__
 
 
 def _get_files(path):

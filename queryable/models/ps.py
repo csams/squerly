@@ -1,7 +1,7 @@
 import shlex
 from subprocess import check_output
 
-from query import Queryable
+from queryable import Queryable
 
 
 def parse(content):
