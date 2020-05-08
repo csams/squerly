@@ -311,6 +311,19 @@ class _Queryable:
         return self._desugar_name_query(key)
 
     def __getitem__(self, key):
+        if isinstance(key, int):
+            return Queryable(self.value[key])
+
+        if isinstance(key, slice):
+            vals = List(self.value[key])
+            seen = set()
+            for v in vals:
+                for p in v.parents:
+                    if p not in seen:
+                        vals.parents.append(p)
+                        seen.add(p)
+            return Queryable(vals)
+
         query = self._desugar(key)
         return self._handle_child_query(query)
 
