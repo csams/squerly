@@ -108,7 +108,7 @@ class _Queryable:
         return sorted(set(self.value))
 
     def sum(self):
-        return sum(self.value)
+        return sum(v for v in self.value if v is not None)
 
     def to_dataframe(self):
         import pandas
@@ -222,9 +222,12 @@ class _Queryable:
                 try:
                     for v in val.values():
                         if isinstance(v, list):
-                            results.extend(v)
+                            for i in v:
+                                if value_query.test(i):
+                                    results.append(i)
                         else:
-                            results.append(v)
+                            if value_query.test(v):
+                                results.append(v)
                 except:
                     return []
                 return results
@@ -233,7 +236,14 @@ class _Queryable:
                 try:
                     v = val[name_part]
                     if value_query.test(v):
-                        return v if isinstance(v, list) else [v]
+                        if isinstance(v, list):
+                            results = []
+                            for i in v:
+                                if value_query.test(i):
+                                    results.append(i)
+                            return results
+                        else:
+                            return [v] if value_query.test(v) else []
                 except:
                     return []
         else:
@@ -243,11 +253,14 @@ class _Queryable:
                 results = []
                 try:
                     for k, v in val.items():
-                        if name_query.test(k) and value_query.test(v):
+                        if name_query.test(k):
                             if isinstance(v, list):
-                                results.extend(v)
+                                for i in v:
+                                    if value_query.test(i):
+                                        results.append(i)
                             else:
-                                results.append(v)
+                                if value_query.test(v):
+                                    results.append(v)
                 except:
                     return []
                 return results

@@ -70,7 +70,7 @@ def parse(content):
 
         meta = _table.get(k)
         if not meta:
-            log.warn(f"Unknown key: {k}")
+            log.warn(f"Skipping unknown key: %s", k)
             continue
 
         key, _type = meta["name"], meta["type"]
