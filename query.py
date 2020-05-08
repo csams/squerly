@@ -186,6 +186,10 @@ class _Queryable:
     def __bool__(self):
         return bool(self.value)
 
+    def __iter__(self):
+        for i in self.value:
+            yield _Queryable(i)
+
     def _handle_child_query(self, query):
 
         def inner(val):
