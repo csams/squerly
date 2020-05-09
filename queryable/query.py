@@ -116,6 +116,9 @@ class _Queryable:
         import pandas
         return pandas.DataFrame(self.value)
 
+    def to_primitives(self):
+        return to_primitives(self.value)
+
     def startswith(self, val):
         try:
             if not self.value:
@@ -533,6 +536,20 @@ def convert(data, parent=None):
         l = List(parents=[parent] if parent is not None else [])
         l.extend(convert(i, parent=l) for i in data)
         return l
+
+    return data
+
+
+def to_primitives(data):
+    """
+    Convert nest of dicts and lists into Dicts and Lists that contain
+    pointers to their parents.
+    """
+    if isinstance(data, Dict):
+        return {k: to_primitives(v) for k, v in data.items()}
+
+    if isinstance(data, List):
+        return [to_primitives(i) for i in data]
 
     return data
 
