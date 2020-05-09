@@ -1,5 +1,6 @@
 import logging
 from subprocess import check_output
+
 from queryable import Queryable
 
 log = logging.getLogger(__name__)

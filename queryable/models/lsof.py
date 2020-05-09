@@ -7,8 +7,8 @@ because lsof doesn't keep values strictly inside the boundaries of their
 headers, and fields aren't unambiguously delimited in rows with missing
 values.
 """
-
 from subprocess import check_output
+
 from queryable import Queryable
 
 
