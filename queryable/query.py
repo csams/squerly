@@ -19,9 +19,10 @@ NONE = object()
 
 
 class CollectionBase:
-    def __init__(self, data=None, parents=None):
+    def __init__(self, data=None, parents=None, source=None):
         super().__init__(data or [])
         self.parents = parents or []
+        self.source = source
         self.uid = uuid.uuid4()
 
     # hash and eq are defined so we can deduplicate as we chase down data
@@ -128,6 +129,11 @@ class _Queryable:
     @property
     def roots(self):
         return _Queryable(get_roots(self.value))
+
+    @property
+    def sources(self):
+        roots = get_roots(self.value)
+        return [r.source for r in roots if r.source]
 
     def upto(self, query):
         cur = self
@@ -394,7 +400,12 @@ class _Queryable:
 
 
 class WhereQuery(Boolean):
-    """ Only use in where queries. """
+    """
+    Used to combine predicated for multiple keys in a dictionary.
+
+    conf.find("conditions").where(q("status", "True") & q("message", matches("error|fail")))
+    Only use in where queries.
+    """
     def __init__(self, name_part, value_part=NONE):
         value_query = _desugar_part(value_part) if value_part is not NONE else TRUE
 
@@ -435,6 +446,7 @@ def convert(data, parent=None):
 
 
 def Queryable(data):
+    """ Use this function to make your data queryable. """
     if isinstance(data, _Queryable):
         return data
 

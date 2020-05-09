@@ -30,7 +30,9 @@ def analyze(path, ignore=".*(log|txt)$"):
                 with open(p) as f:
                     doc = yaml.load(f, Loader=yaml.CSafeLoader)
                     if isinstance(doc, (list, dict)):
-                        results.append(convert(doc))
+                        d = convert(doc)
+                        d.source = p
+                        results.append(d)
             except:
                 pass
     return Queryable(results)
