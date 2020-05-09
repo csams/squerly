@@ -115,6 +115,66 @@ class _Queryable:
         import pandas
         return pandas.DataFrame(self.value)
 
+    def __eq__(self, other):
+        if not isinstance(other, CollectionBase):
+            l = List()
+            l.append(other)
+            other = Queryable(l)
+
+        if len(self) != len(other):
+            return False
+
+        for i in range(len(self)):
+            if self.value[i] != other.value[i]:
+                return False
+        return True
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __gt__(self, other):
+        if not isinstance(other, CollectionBase):
+            l = List()
+            l.append(other)
+            other = Queryable(l)
+
+        try:
+            for i in range(len(self)):
+                if self.value[i] <= other.value[i]:
+                    return False
+        except:
+            return False
+        else:
+            return True
+
+    def __ge__(self, other):
+        if not isinstance(other, CollectionBase):
+            l = List()
+            l.append(other)
+            other = Queryable(l)
+
+        try:
+            for i in range(len(self)):
+                if self.value[i] < other.value[i]:
+                    return False
+        except:
+            return False
+        else:
+            return True
+
+    def __lt__(self, other):
+        return not self >= other
+
+    def __le__(self, other):
+        try:
+            for i in range(len(self)):
+                if self.value[i] > other.value[i]:
+                    return False
+        except:
+            return False
+        else:
+            return True
+
     @property
     def parents(self):
         gp = []
@@ -184,7 +244,7 @@ class _Queryable:
         # IPython.core.completer.Completer.use_jedi = False
         # c = Config()
         # IPython.start_ipython([], user_ns=locals(), config=c)
-        return self.get_keys()
+        return self.keys()
 
     def __len__(self):
         return len(self.value)
@@ -382,7 +442,10 @@ class _Queryable:
         # caller wants to manually inspect each item.
         elif callable(query):
             def runquery(val):
-                return query(_Queryable(val))
+                try:
+                    return query(_Queryable(val))
+                except:
+                    return False
 
         # this handles the case where the caller wants to simply check for the
         # existence of a key without needing to construct a WhereQuery. Because
