@@ -1,3 +1,4 @@
+import re
 import uuid
 from collections import Counter
 from pprint import pformat
@@ -115,6 +116,30 @@ class _Queryable:
         import pandas
         return pandas.DataFrame(self.value)
 
+    def startswith(self, val):
+        try:
+            if not self.value:
+                return False
+            return self.value[0].startswith(val)
+        except:
+            return False
+
+    def endswith(self, val):
+        try:
+            if not self.value:
+                return False
+            return self.value[0].endswith(val)
+        except:
+            return False
+
+    def matches(self, val, flags=None):
+        try:
+            if not self.value:
+                return False
+            return re.search(val, self.value[0], flags=flags)
+        except:
+            return False
+
     def __eq__(self, other):
         if not isinstance(other, CollectionBase):
             l = List()
@@ -193,7 +218,11 @@ class _Queryable:
     @property
     def sources(self):
         roots = get_roots(self.value)
-        return [r.source for r in roots if r.source]
+        sources = [r.source for r in roots if r.source]
+        if sources:
+            return sources
+
+        return [v.source for v in self.value if v.source]
 
     def upto(self, query):
         cur = self
