@@ -8,6 +8,8 @@ import yaml
 from queryable import *  # noqa
 from queryable import convert, List, Queryable
 
+Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -34,7 +36,7 @@ def analyze(paths, ignore=".*(log|txt)$"):
         if not ignore(p):
             try:
                 with open(p) as f:
-                    doc = yaml.load(f, Loader=yaml.CSafeLoader)
+                    doc = yaml.load(f, Loader=Loader)
                     if isinstance(doc, (list, dict)):
                         d = convert(doc)
                         d.source = p

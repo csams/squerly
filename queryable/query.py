@@ -1,7 +1,7 @@
 import re
 import uuid
+import yaml
 from collections import Counter
-from pprint import pformat
 
 from .boolean import Boolean, eq, pred, TRUE
 
@@ -15,6 +15,8 @@ __all__ = [
     "WhereQuery",
     "q"
 ]
+
+Dumper = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
 
 NONE = object()
 
@@ -491,7 +493,7 @@ class _Queryable:
         return self._handle_where_query(runquery)
 
     def __repr__(self):
-        return f"_Queryable({pformat(self.value)})"
+        return yaml.dump(self.to_primitives(), Dumper=Dumper)
 
 
 class WhereQuery(Boolean):
