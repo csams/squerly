@@ -1,7 +1,7 @@
 import logging
 from subprocess import check_output
 
-from queryable import Queryable
+from queryable import Dict, List, Queryable
 
 log = logging.getLogger(__name__)
 
@@ -57,8 +57,8 @@ _table = {
 
 
 def parse(content):
-    results = []
-    one = {}
+    results = List()
+    one = Dict(parents=[results])
     net = False
     for line in content:
         line = line.rstrip()
@@ -82,7 +82,7 @@ def parse(content):
                 one["internet_address"] = one["file_name"]
                 del one["file_name"]
             results.append(one)
-            one = {}
+            one = Dict(parents=[results])
             net = False
 
         one[key] = _type(v) if v != "" else None
