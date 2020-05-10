@@ -89,7 +89,7 @@ def parse(content):
     if one:
         results.append(one)
 
-    return Queryable(results)
+    return results
 
 
 def load():
@@ -97,4 +97,4 @@ def load():
 
 
 def get():
-    return parse(load())
+    return Queryable(parse(load()))
