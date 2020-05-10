@@ -1,3 +1,4 @@
+import operator
 import re
 import uuid
 import yaml
@@ -6,19 +7,19 @@ from collections import Counter
 from .boolean import Boolean, eq, pred, TRUE
 
 __all__ = [
+    "ANY",
     "CollectionBase",
     "convert",
     "Dict",
     "List",
-    "NONE",
     "Queryable",
+    "q",
     "WhereQuery",
-    "q"
 ]
 
-Dumper = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
+_Dumper = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
 
-NONE = object()
+ANY = object()
 
 
 class CollectionBase:
@@ -162,48 +163,36 @@ class _Queryable:
     def __ne__(self, other):
         return not self == other
 
-    def __gt__(self, other):
+    def _compare(self, op, other):
+        """
+        Manual comparison since we've overloaded __eq__ on CollectionBase.
+        """
         if not isinstance(other, CollectionBase):
             l = List()
             l.append(other)
             other = Queryable(l)
 
         try:
-            for i in range(len(self)):
-                if self.value[i] <= other.value[i]:
+            for i in range(len(self.value)):
+                if op(self.value[i], other.value[i]):
+                    continue
+                else:
                     return False
+            return True
         except:
             return False
-        else:
-            return True
+
+    def __gt__(self, other):
+        return self._compare(operator.gt, other)
 
     def __ge__(self, other):
-        if not isinstance(other, CollectionBase):
-            l = List()
-            l.append(other)
-            other = Queryable(l)
-
-        try:
-            for i in range(len(self)):
-                if self.value[i] < other.value[i]:
-                    return False
-        except:
-            return False
-        else:
-            return True
+        return self._compare(operator.ge, other)
 
     def __lt__(self, other):
-        return not self >= other
+        return self._compare(operator.lt, other)
 
     def __le__(self, other):
-        try:
-            for i in range(len(self)):
-                if self.value[i] > other.value[i]:
-                    return False
-        except:
-            return False
-        else:
-            return True
+        return self._compare(operator.le, other)
 
     @property
     def parents(self):
@@ -314,9 +303,9 @@ class _Queryable:
     def _desugar_tuple_query(self, key):
         value = self.value
         name_part, value_part = key
-        value_query = _desugar_part(value_part) if value is not NONE else TRUE
+        value_query = _desugar_part(value_part) if value is not ANY else TRUE
 
-        if name_part is NONE:
+        if name_part is ANY:
             def query(val):
                 results = []
                 try:
@@ -368,7 +357,7 @@ class _Queryable:
         return query
 
     def _desugar_name_query(self, key):
-        if key is NONE:
+        if key is ANY:
             def query(val):
                 results = []
                 try:
@@ -451,15 +440,9 @@ class _Queryable:
 
         return _Queryable(inner(self.value))
 
-    def where(self, query, value=NONE):
-        """
-        Accepts WhereQuery instances, combinations of WhereQuery instances, or
-        a callable that will be passed a Queryable version of each item. Where
-        queries only make sense against lists.
-        """
-
+    def _desugar_where(self, query, value):
         # if value is defined, the caller didn't bother to make a WhereQuery
-        if value is not NONE:
+        if value is not ANY:
             query = WhereQuery(query, value)
 
             def runquery(val):
@@ -490,23 +473,33 @@ class _Queryable:
             def runquery(val):
                 return query.test(val)
 
+        return runquery
+
+    def where(self, query, value=ANY):
+        """
+        Accepts WhereQuery instances, combinations of WhereQuery instances, or
+        a callable that will be passed a Queryable version of each item. Where
+        queries only make sense against lists.
+        """
+
+        runquery = self._desugar_where(query, value)
         return self._handle_where_query(runquery)
 
     def __repr__(self):
-        return yaml.dump(self.to_primitives(), Dumper=Dumper)
+        return yaml.dump(self.to_primitives(), Dumper=_Dumper)
 
 
 class WhereQuery(Boolean):
     """
-    Used to combine predicated for multiple keys in a dictionary.
+    Used to combine predicates for multiple keys in a dictionary.
 
     conf.find("conditions").where(q("status", "True") & q("message", matches("error|fail")))
     Only use in where queries.
     """
-    def __init__(self, name_part, value_part=NONE):
-        value_query = _desugar_part(value_part) if value_part is not NONE else TRUE
+    def __init__(self, name_part, value_part=ANY):
+        value_query = _desugar_part(value_part) if value_part is not ANY else TRUE
 
-        if name_part is NONE:
+        if name_part is ANY:
             self.query = lambda val: any(value_query.test(v) for v in val.values())
         elif not callable(name_part):
             self.query = lambda val: value_query.test(val[name_part]) if name_part in val else False
