@@ -228,6 +228,7 @@ class _Queryable:
                 else:
                     return p
             cur = p
+        return _Queryable(List())
 
     def find(self, *args):
         results = List()
