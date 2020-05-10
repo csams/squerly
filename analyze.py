@@ -29,7 +29,7 @@ def _get_files(path):
 
 
 def analyze(paths, ignore=".*(log|txt)$"):
-    ignore = re.compile(ignore).search if ignore else lambda x: False
+    ignore = re.compile(ignore).search if ignore else lambda _: False
     results = List()
 
     def load(p):
