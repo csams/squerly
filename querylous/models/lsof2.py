@@ -1,7 +1,7 @@
 import logging
 from subprocess import check_output
 
-from queryable import Dict, List, Queryable
+from querylous import Dict, List, Queryable
 
 log = logging.getLogger(__name__)
 

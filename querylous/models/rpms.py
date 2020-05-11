@@ -2,7 +2,7 @@ import json
 import shlex
 from subprocess import check_output
 
-from queryable import Queryable
+from querylous import Queryable
 
 
 def parse(content):

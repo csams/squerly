@@ -1,4 +1,4 @@
-from queryable import Queryable
+from querylous import Queryable
 
 
 def parse(content):
