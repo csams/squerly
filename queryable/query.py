@@ -124,24 +124,18 @@ class _Queryable:
 
     def startswith(self, val):
         try:
-            if not self.value:
-                return False
             return self.value[0].startswith(val)
         except:
             return False
 
     def endswith(self, val):
         try:
-            if not self.value:
-                return False
             return self.value[0].endswith(val)
         except:
             return False
 
     def matches(self, val, flags=None):
         try:
-            if not self.value:
-                return False
             return re.search(val, self.value[0], flags=flags)
         except:
             return False
