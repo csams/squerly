@@ -225,20 +225,36 @@ class _Queryable:
         return [v.source for v in self.value if v.source]
 
     def upto(self, query):
-        cur = self
-        while cur:
-            p = cur.parents
-            if p.parents[query]:
-                if p.value and isinstance(p.value[0], list):
-                    return cur
+        results = List()
+        seen = set()
+
+        def inner(val):
+            for parent in val.parents:
+                if isinstance(parent.value, Dict):
+                    r = parent[query]
                 else:
-                    return p
-            cur = p
-        return _Queryable(List())
+                    r = parent.parents[query]
+
+                if r:
+                    if isinstance(val.value, Dict):
+                        results.append(val.value)
+                    else:
+                        results.extend(val.value)
+
+                    for p in r.value.parents:
+                        if p not in seen:
+                            results.parents.append(p)
+                            seen.add(p)
+                else:
+                    inner(parent)
+
+        inner(self)
+        return _Queryable(results)
 
     def find(self, *args):
         results = List()
         queries = [self._desugar(a) for a in args]
+        seen = set()
 
         def run_queries(node):
             n = node
@@ -247,7 +263,10 @@ class _Queryable:
 
             if n.value:
                 results.extend(n.value)
-                results.parents.extend(n.value.parents)
+                for p in n.value.parents:
+                    if p not in seen:
+                        results.parents.append(p)
+                        seen.add(p)
 
             if isinstance(node.value, Dict):
                 for i in node.value.values():

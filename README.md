@@ -198,9 +198,8 @@ def load(path):
 def get_stale(resources):
     results = []
     for doc in resources:
-        latestRevision = doc.get("status", {}).get("latestAvailableRevision")
         for status in doc.get("status", {}).get("nodeStatuses", []):
-            if status.get("currentRevision") != latestRevision:
+            if "targetRevision" in status and status["targetRevision"] != status["currentRevision"]:
                 results.append(doc)
     return results
 
@@ -234,7 +233,7 @@ stale = docs.status.nodeStatuses.where(lambda s: s.currentRevision != s.targetRe
 ```
 
 Or better yet, run `./analyze.py must-gather.local.12345/` and get access to
-_every_ collected resource:
+_every_ collected resource in the archive:
 ```python
 In [1]: stale = conf.status.nodeStatuses.where(lambda s: s.currentRevision != s.targetRevision).roots
 
