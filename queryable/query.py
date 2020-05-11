@@ -146,6 +146,9 @@ class _Queryable:
             l.append(other)
             other = Queryable(l)
 
+        if not (self and other):
+            return False
+
         if len(self) != len(other):
             return False
 
@@ -155,6 +158,8 @@ class _Queryable:
         return True
 
     def __ne__(self, other):
+        if not (self and other):
+            return False
         return not self == other
 
     def _compare(self, op, other):
@@ -165,6 +170,9 @@ class _Queryable:
             l = List()
             l.append(other)
             other = Queryable(l)
+
+        if not (self and other):
+            return False
 
         try:
             for i in range(len(self.value)):
