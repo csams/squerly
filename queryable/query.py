@@ -40,6 +40,10 @@ class CollectionBase:
         except:
             return False
 
+    def __repr__(self):
+        name = self.__class__.__name__
+        return f"{name}({super().__repr__()})"
+
 
 class List(CollectionBase, list):
     """ A list that remembers the data structure to which it belongs. """
@@ -251,8 +255,17 @@ class _Queryable:
                         run_queries(_Queryable(i))
             elif isinstance(node.value, List):
                 for i in node.value:
-                    if isinstance(i, CollectionBase):
+                    if isinstance(i, List):
                         run_queries(_Queryable(i))
+                    # we've already picked out values from the dicts above, so
+                    # we recurse on their values instead of the individual
+                    # dicts directly. Otherwise, we'd double collect those that
+                    # hit - once as members of the original list and once
+                    # individually.
+                    elif isinstance(i, Dict):
+                        for v in i.values():
+                            run_queries(_Queryable(v))
+
         run_queries(self)
         return _Queryable(results)
 
@@ -290,7 +303,6 @@ class _Queryable:
                 if r:
                     return List(r, parents=[val])
                 return List()
-
             elif isinstance(val, List):
                 results = List()
                 for i in val:
