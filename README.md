@@ -242,4 +242,25 @@ In [2]: stale.kind
 Out[2]: 
 - KubeScheduler
 - KubeAPIServer
+
+In [3]: conf.find(("message", matches("Perm")))
+
+Out[3]:
+- 'rm: cannot remove ''/etc/cni/net.d/80-openshift-network.conf'': Permission denied
+
+  '
+- 'rm: cannot remove ''/etc/cni/net.d/80-openshift-network.conf'': Permission denied
+
+  '
+- '+ source /run/etcd/environment
+
+  /bin/sh: line 3: /run/etcd/environment: Permission denied
+
+  '
+
+In [8]: conf.find(("message", matches("Perm"))).upto("items").metadata.name
+
+Out[8]: 
+- sdn-7llq6
+- etcd-member-control-plane-0
 ```
