@@ -214,7 +214,7 @@ stale = get_stale([scheduler, cm, api])
 Or you could do it like this:
 ```python
 import yaml
-from queryable import List, convert, Queryable
+from querylous import List, convert, Queryable
 
 _Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
