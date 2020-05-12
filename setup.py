@@ -5,7 +5,8 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 
 runtime = set([
-    "pyyaml"
+    "pyyaml",
+    "IPython"
 ])
 
 develop = set([
