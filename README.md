@@ -180,21 +180,10 @@ status:
   readyReplicas: 0
   ```
 
-And you want to know which ones mention node statuses not at the latest
-revision.
+And you want to know which ones mention node statuses not at the latest revision.
 
 You could do it like this:
 ```python
-import yaml
-
-_Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
-
-
-def load(path):
-    with open(path) as f:
-        return yaml.load(f, Loader=_Loader)
-
-
 def get_stale(resources):
     results = []
     for doc in resources:
@@ -213,20 +202,11 @@ stale = get_stale([scheduler, cm, api])
 
 Or you could do it like this:
 ```python
-import yaml
 from querylous import List, convert, Queryable
-
-_Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
-
-
-def load(path):
-    with open(path) as f:
-        return yaml.load(f, Loader=_Loader)
-
 
 scheduler = convert(load("scheduler.yaml"))
 cm = convert(load("controller_manager.yaml"))
-api = load("api_server.yaml")
+api = convert(load("api_server.yaml"))
 docs = Queryable(List([scheduler, cm, api]))
 
 stale = docs.status.nodeStatuses.where(lambda s: s.currentRevision != s.targetRevision).roots
