@@ -202,7 +202,7 @@ stale = get_stale([scheduler, cm, api])
 
 Or you could do it like this:
 ```python
-from querylous import List, convert, Queryable
+from squerly import List, convert, Queryable
 
 scheduler = convert(load("scheduler.yaml"))
 cm = convert(load("controller_manager.yaml"))

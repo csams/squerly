@@ -5,8 +5,8 @@ import os
 import re
 import yaml
 
-from querylous import *  # noqa
-from querylous import convert, List, Queryable
+from squerly import *  # noqa
+from squerly import convert, List, Queryable
 
 Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 

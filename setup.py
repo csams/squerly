@@ -34,12 +34,12 @@ if __name__ == "__main__":
         long_description = f.read()
 
     setup(
-        name="querylous",
+        name="squerly",
         version="0.1.0",
-        description="Querylous takes the tedium out of nested dicts and lists.",
+        description="Squerly takes the tedium out of nested dicts and lists.",
         long_description=long_description,
         long_description_content_type="text/markdown",
-        url="https://github.com/csams/querylous",
+        url="https://github.com/csams/squerly",
         author="Christopher Sams",
         author_email="csams@gmail.com",
         packages=find_packages(),

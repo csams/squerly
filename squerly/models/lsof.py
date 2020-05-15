@@ -9,7 +9,7 @@ values.
 """
 from subprocess import check_output
 
-from querylous import Queryable
+from squerly import Queryable
 
 
 def _get_intervals(line):

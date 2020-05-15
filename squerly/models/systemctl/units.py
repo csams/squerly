@@ -1,7 +1,7 @@
 import string
 from subprocess import check_output
 
-from querylous import Queryable
+from squerly import Queryable
 
 cruft = string.whitespace + "\u25cf"
 

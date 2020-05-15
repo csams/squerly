@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-import querylous  # noqa
-from querylous.models import df, lsof, lsof2, meminfo, ps, rpms  # noqa
-from querylous import *  # noqa
+import squerly  # noqa
+from squerly.models import df, lsof, lsof2, meminfo, ps, rpms  # noqa
+from squerly import *  # noqa
 
-__all__ = ["df", "lsof", "lsof2", "meminfo", "ps", "rpms", "analyze"] + querylous.__all__
+__all__ = ["df", "lsof", "lsof2", "meminfo", "ps", "rpms", "analyze"] + squerly.__all__
