@@ -259,7 +259,10 @@ class _Queryable:
         def run_queries(node):
             n = node
             for q in queries:
-                n = n._handle_child_query(q)
+                if n.value:
+                    n = n._handle_child_query(q)
+                else:
+                    break
 
             if n.value:
                 results.extend(n.value)
