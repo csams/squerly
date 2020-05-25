@@ -50,9 +50,29 @@ class List(CollectionBase, list):
     pass
 
 
+def List_representer(dumper, data):
+    # https://yaml.org/type/seq.html
+    return dumper.represent_sequence("tag:yaml.org,2002:seq", data)
+
+
+yaml.add_representer(List, List_representer, Dumper=_Dumper)
+yaml.add_representer(List, List_representer, Dumper=yaml.Dumper)
+yaml.add_representer(List, List_representer, Dumper=yaml.SafeDumper)
+
+
 class Dict(CollectionBase, dict):
     """ A dict that remembers the data structure to which it belongs. """
     pass
+
+
+def Dict_representer(dumper, data):
+    # https://yaml.org/type/map.html
+    return dumper.represent_mapping("tag:yaml.org,2002:map", data)
+
+
+yaml.add_representer(Dict, Dict_representer, Dumper=_Dumper)
+yaml.add_representer(Dict, Dict_representer, Dumper=yaml.Dumper)
+yaml.add_representer(Dict, Dict_representer, Dumper=yaml.SafeDumper)
 
 
 def _desugar_part(x):
@@ -543,7 +563,7 @@ class _Queryable:
         return self._handle_where_query(runquery)
 
     def __repr__(self):
-        return yaml.dump(self.to_primitives(), Dumper=_Dumper)
+        return yaml.dump(self.value, Dumper=_Dumper)
 
 
 class WhereQuery(Boolean):
