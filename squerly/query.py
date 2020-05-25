@@ -56,9 +56,10 @@ def List_representer(dumper, data):
     return dumper.represent_sequence("tag:yaml.org,2002:seq", data)
 
 
-yaml.add_representer(List, List_representer, Dumper=_Dumper)
 yaml.add_representer(List, List_representer, Dumper=yaml.Dumper)
-yaml.add_representer(List, List_representer, Dumper=yaml.SafeDumper)
+yaml.add_representer(List, List_representer, Dumper=_Dumper)
+if _Dumper is not yaml.SafeDumper:
+    yaml.add_representer(List, List_representer, Dumper=yaml.SafeDumper)
 
 
 class Dict(CollectionBase, dict):
@@ -72,9 +73,10 @@ def Dict_representer(dumper, data):
     return dumper.represent_mapping("tag:yaml.org,2002:map", data)
 
 
-yaml.add_representer(Dict, Dict_representer, Dumper=_Dumper)
 yaml.add_representer(Dict, Dict_representer, Dumper=yaml.Dumper)
-yaml.add_representer(Dict, Dict_representer, Dumper=yaml.SafeDumper)
+yaml.add_representer(Dict, Dict_representer, Dumper=_Dumper)
+if _Dumper is not yaml.SafeDumper:
+    yaml.add_representer(Dict, Dict_representer, Dumper=yaml.SafeDumper)
 
 
 def _desugar_part(x):
