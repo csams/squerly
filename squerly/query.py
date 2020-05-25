@@ -200,6 +200,26 @@ class _Queryable:
     def __le__(self, other):
         return self._compare(operator.le, other)
 
+    def __add__(self, other):
+        value = List()
+        for i in (self, other):
+            i = Queryable(i)
+            if isinstance(i.value, List):
+                value.extend(i.value)
+            else:
+                value.append(i.value)
+        return _Queryable(value)
+
+    def _iadd(self, other):
+        if not isinstance(self.value, List):
+            self.value = List(self.value)
+
+        other = Queryable(other)
+        if isinstance(other, List):
+            self.value.extend(other.value)
+        else:
+            self.value.append(other.value)
+
     @property
     def parents(self):
         gp = []
@@ -586,8 +606,11 @@ def to_primitives(data):
     return data
 
 
-def Queryable(data):
+def Queryable(data=None):
     """ Use this function to make your data queryable. """
+    if data is None:
+        return _Queryable(List())
+
     if isinstance(data, _Queryable):
         return data
 
