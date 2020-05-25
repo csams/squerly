@@ -6,7 +6,19 @@ from squerly import Queryable
 
 def parse(content):
     results = []
-    header = ["user", "pid", "cpu", "mem", "vsz", "rss", "tty", "stat", "start", "time", "command"]
+    header = [
+        "user",
+        "pid",
+        "cpu",
+        "mem",
+        "vsz",
+        "rss",
+        "tty",
+        "stat",
+        "start",
+        "time",
+        "command",
+    ]
     hl = len(header) - 1
     for line in content[1:]:
         parts = [l.strip() for l in line.split(None, hl)]

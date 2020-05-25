@@ -47,6 +47,7 @@ class CollectionBase:
 
 class List(CollectionBase, list):
     """ A list that remembers the data structure to which it belongs. """
+
     pass
 
 
@@ -62,6 +63,7 @@ yaml.add_representer(List, List_representer, Dumper=yaml.SafeDumper)
 
 class Dict(CollectionBase, dict):
     """ A dict that remembers the data structure to which it belongs. """
+
     pass
 
 
@@ -141,6 +143,7 @@ class _Queryable:
 
     def to_dataframe(self):
         import pandas
+
         return pandas.DataFrame(self.value)
 
     def to_primitives(self):
@@ -358,7 +361,6 @@ class _Queryable:
             yield _Queryable(i)
 
     def _handle_child_query(self, query):
-
         def inner(val):
             if isinstance(val, Dict):
                 r = query(val)
@@ -383,6 +385,7 @@ class _Queryable:
         value_query = _desugar_part(value_part) if value is not ANY else TRUE
 
         if name_part is ANY:
+
             def query(val):
                 results = []
                 try:
@@ -397,7 +400,9 @@ class _Queryable:
                 except:
                     return []
                 return results
+
         elif not callable(name_part):
+
             def query(val):
                 try:
                     v = val[name_part]
@@ -412,6 +417,7 @@ class _Queryable:
                             return [v] if value_query.test(v) else []
                 except:
                     return []
+
         else:
             name_query = _desugar_part(name_part)
 
@@ -435,6 +441,7 @@ class _Queryable:
 
     def _desugar_name_query(self, key):
         if key is ANY:
+
             def query(val):
                 results = []
                 try:
@@ -446,13 +453,16 @@ class _Queryable:
                 except:
                     return []
                 return results
+
         elif not callable(key):
+
             def query(val):
                 try:
                     r = val[key]
                     return r if isinstance(r, list) else [r]
                 except:
                     return []
+
         else:
             name_query = _desugar_part(key)
 
@@ -528,6 +538,7 @@ class _Queryable:
         # query already contains WhereQuery instances. We check for Boolean
         # because query might some combination of WhereQuerys.
         elif isinstance(query, Boolean):
+
             def runquery(val):
                 return query.test(val)
 
@@ -535,6 +546,7 @@ class _Queryable:
         # callable, it's just a regular function or lambda. We assume the
         # caller wants to manually inspect each item.
         elif callable(query):
+
             def runquery(val):
                 try:
                     return query(_Queryable(val))
@@ -573,16 +585,23 @@ class WhereQuery(Boolean):
     conf.find("conditions").where(q("status", "True") & q("message", matches("error|fail")))
     Only use in where queries.
     """
+
     def __init__(self, name_part, value_part=ANY):
         value_query = _desugar_part(value_part) if value_part is not ANY else TRUE
 
         if name_part is ANY:
             self.query = lambda val: any(value_query.test(v) for v in val.values())
         elif not callable(name_part):
-            self.query = lambda val: value_query.test(val[name_part]) if name_part in val else False
+            self.query = (
+                lambda val: value_query.test(val[name_part])
+                if name_part in val
+                else False
+            )
         else:
             name_query = _desugar_part(name_part)
-            self.query = lambda val: any(name_query.test(k) and value_query.test(v) for k, v in val.items())
+            self.query = lambda val: any(
+                name_query.test(k) and value_query.test(v) for k, v in val.items()
+            )
 
     def test(self, value):
         try:

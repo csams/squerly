@@ -98,9 +98,11 @@ def flip(f):
     Switches position of the first two arguments to f and ensures
     its result is a bool.
     """
+
     @wraps(f)
     def inner(a, b, *args, **kwargs):
         return bool(f(b, a, *args, **kwargs))
+
     return inner
 
 

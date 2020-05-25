@@ -20,7 +20,9 @@ def parse(content):
 
 
 def load():
-    return check_output(["systemctl", "-l", "-a", "list-units"], encoding="utf-8").splitlines()
+    return check_output(
+        ["systemctl", "-l", "-a", "list-units"], encoding="utf-8"
+    ).splitlines()
 
 
 def get():
