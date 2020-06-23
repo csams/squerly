@@ -6,7 +6,6 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 runtime = set([
     "pyyaml",
-    "IPython"
 ])
 
 develop = set([
@@ -26,6 +25,7 @@ docs = set([
 
 optional = set([
     "pandas",
+    "IPython"
 ])
 
 
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     setup(
         name="squerly",
-        version="0.1.0",
+        version="0.1.1",
         description="Squerly takes the tedium out of nested dicts and lists.",
         long_description=long_description,
         long_description_content_type="text/markdown",
@@ -47,7 +47,7 @@ if __name__ == "__main__":
         package_data={"": ["LICENSE"]},
         license="Apache 2.0",
         extras_require={
-            "develop": list(develop),
+            "develop": list(develop | docs | optional),
             "docs": list(docs),
             "optional": list(optional),
         },
