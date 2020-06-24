@@ -11,13 +11,15 @@ __all__ = [
     "CollectionBase",
     "convert",
     "Dict",
+    "from_yaml",
     "List",
-    "Queryable",
     "q",
+    "Queryable",
     "WhereQuery",
 ]
 
 _Dumper = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
+_Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 ANY = object()
 
@@ -642,3 +644,12 @@ def Queryable(data=None):
         return _Queryable(data)
 
     return _Queryable(convert(data))
+
+
+def from_yaml(path):
+    try:
+        with open(path) as f:
+            return Queryable(yaml.load(f, Loader=_Loader))
+    except:
+        return Queryable(yaml.load(path, Loader=_Loader))
+
