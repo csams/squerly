@@ -67,7 +67,7 @@ def main():
     c = Config()
     ns = {}
     ns.update(globals())
-    ns.update(locals())
+    ns["conf"] = conf
     IPython.start_ipython([], user_ns=ns, config=c)
 
 

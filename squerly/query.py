@@ -1,73 +1,558 @@
-import operator
 import re
-import uuid
 import yaml
 from collections import Counter
 
-from .boolean import Boolean, eq, pred, TRUE
+from .boolean import Boolean, pred
 
 __all__ = [
     "ANY",
-    "CollectionBase",
-    "convert",
     "Dict",
-    "from_yaml",
     "List",
-    "q",
+    "Result",
     "Queryable",
-    "WhereQuery",
+    "convert",
+    "from_dict",
+    "from_yaml",
+    "make_child_query",
+    "make_model",
+    "q",
 ]
 
 _Dumper = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
 _Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
-ANY = object()
+
+ANY = None
 
 
-class CollectionBase:
-    def __init__(self, data=None, parents=None, source=None):
-        super().__init__(data or [])
-        self.parents = parents or []
-        self.source = source
-        self.uid = uuid.uuid4()
+class _Base(object):
+    """
+    Base class for primitive Dicts and Lists we'll use to build models. They
+    have parent pointers and have __hash__ and __eq__ overwritten so they can
+    be deduplicated.
+    """
 
-    # hash and eq are defined so we can deduplicate as we chase down data
-    # structure roots.
+    def __init__(self, data=None, parent=None):
+        if data is not None:
+            super(_Base, self).__init__(data)
+        else:
+            super(_Base, self).__init__()
+        self.parent = parent
+
     def __hash__(self):
-        return hash(self.uid)
+        return super(object, self).__hash__()
+
+    def __eq__(self, value):
+        return super(object, self).__eq__(value)
+
+
+class Dict(_Base, dict):
+    pass
+
+
+class List(_Base, list):
+    pass
+
+
+class Result(list):
+    """
+    Contains primitives, Dicts, or Lists.
+    """
+
+    def __len__(self):
+        return len(list(self.values))
+
+    @property
+    def grandchildren(self):
+        for v in self:
+            if isinstance(v, Dict):
+                yield from v.values()
+            elif isinstance(v, List):
+                yield from v
+
+    @property
+    def values(self):
+        for v in self.grandchildren:
+            if isinstance(v, List):
+                yield from v
+            else:
+                yield v
+
+
+class WhereBoolean(object):
+    def __and__(self, other):
+        return WhereAnd(self, other)
+
+    def __or__(self, other):
+        return WhereOr(self, other)
+
+    def __invert__(self):
+        return WhereNot(self)
+
+    def test(self, value):
+        raise NotImplementedError()
+
+
+class WhereAnd(WhereBoolean):
+    def __init__(self, left, right):
+        self.left = left
+        self.right = right
+
+    def test(self, value):
+        return self.left.test(value) and self.right.test(value)
+
+
+class WhereOr(WhereBoolean):
+    def __init__(self, left, right):
+        self.left = left
+        self.right = right
+
+    def test(self, value):
+        return self.left.test(value) or self.right.test(value)
+
+
+class WhereNot(WhereBoolean):
+    def __init__(self, delegate):
+        self.delegate = delegate
+
+    def test(self, value):
+        return not self.delegate.test(value)
+
+
+class WherePred(WhereBoolean):
+    def __init__(self, pred):
+        self.pred = pred
+
+    def test(self, value):
+        try:
+            return bool(self.pred(value))
+        except:
+            return False
+
+
+class WhereQuery(WherePred):
+    def __init__(self, name, value=None):
+        super().__init__(_desugar(name if value is None else (name, value)))
+
+
+make_child_query = WhereQuery
+q = WhereQuery
+
+
+def _desugar(query):
+    """
+    returns a function that accepts a dict and returns
+    all name value pairs from it that match the query.
+    """
+    if isinstance(query, tuple):
+        name, value = query
+        if callable(name):
+            name = pred(name)
+
+        if callable(value):
+            value = pred(value)
+
+        if isinstance(name, Boolean) and isinstance(value, Boolean):
+            def inner(node):
+                res = {}
+                for k, v in node.items():
+                    if name.test(k) and value.test(v):
+                        res[k] = v
+                return Dict(res, parent=node)
+            return inner
+
+        elif isinstance(name, Boolean):
+            def inner(node):
+                res = {}
+                for k, v in node.items():
+                    if name.test(k) and v == value:
+                        res[k] = v
+                return Dict(res, parent=node)
+            return inner
+
+        elif isinstance(value, Boolean):
+            if name is ANY:
+                def inner(node):
+                    res = {}
+                    for k, v in node.items():
+                        if value.test(v):
+                            res[k] = v
+                    return Dict(res, parent=node)
+            else:
+                def inner(node):
+                    try:
+                        v = node[name]
+                        if value.test(v):
+                            return Dict({name: v}, parent=node)
+                        return Dict({}, parent=node)
+                    except:
+                        return Dict({}, parent=node)
+            return inner
+
+        else:
+            def inner(node):
+                try:
+                    v = node[name]
+                    if v == value:
+                        return Dict({name: v}, parent=node)
+                    return Dict({}, parent=node)
+                except:
+                    return Dict({}, parent=node)
+            return inner
+
+    elif query is ANY:
+        return lambda node: node
+
+    elif isinstance(query, Boolean):
+        def inner(node):
+            res = {}
+            for k, v in node.items():
+                if query.test(k):
+                    res[k] = v
+            return Dict(res, parent=node)
+        return inner
+
+    elif callable(query):
+        def inner(node):
+            res = {}
+            for k, v in node.items():
+                try:
+                    if query(k):
+                        res[k] = v
+                except:
+                    pass
+            return Dict(res, parent=node)
+        return inner
+
+    else:
+        def inner(node):
+            try:
+                return Dict({query: node[query]}, parent=node)
+            except:
+                return Dict({}, parent=node)
+        return inner
+
+
+def _query(pred, value):
+    if isinstance(value, Dict):
+        res = pred(value)
+        return Result([res] if res else [])
+
+    if isinstance(value, List):
+        res = Result()
+        for v in value:
+            r = pred(v)
+            if r:
+                res.append(r)
+        return res
+
+    if isinstance(value, Result):
+        res = Result()
+        for c in value.grandchildren:
+            res.extend(_query(pred, c))
+        return res
+    return Result()
+
+
+def _flatten(obj):
+    if isinstance(obj, Dict):
+        yield obj
+        for v in obj.values():
+            yield from _flatten(v)
+    elif isinstance(obj, (List, Result)):
+        for v in obj:
+            yield from _flatten(v)
+    else:
+        yield obj
+
+
+class _Queryable:
+    __slots__ = ["_value"]
+
+    def __init__(self, value):
+        self._value = value
+
+    def keys(self):
+        obj = self._value
+        if isinstance(obj, Dict):
+            return sorted(set(obj.keys()))
+
+        if isinstance(obj, Result):
+            obj = obj.grandchildren
+
+        res = set()
+        for i in obj:
+            try:
+                res |= i.keys()
+            except:
+                try:
+                    for v in i:
+                        res |= v.keys()
+                except:
+                    pass
+        return sorted(res)
+
+    get_keys = keys
+
+    @property
+    def parents(self):
+        value = self._value
+        if isinstance(value, Dict):
+            return _Queryable(List([value.parent.parent]))
+
+        seen = set()
+        res = List()
+        for v in value:
+            p = v.parent
+            while isinstance(p, list):
+                p = p.parent
+            if p is not None and p not in seen:
+                res.append(p)
+                seen.add(p)
+        return _Queryable(res)
+
+    @property
+    def roots(self):
+        value = self._value if isinstance(self._value, list) else [self._value]
+        res = List()
+        seen = set()
+        for v in value:
+            if isinstance(v, Dict):
+                p = v
+                while p.parent is not None:
+                    p = p.parent
+                if p not in seen:
+                    res.append(p)
+                    seen.add(p)
+        return _Queryable(res)
+
+    @property
+    def unique_values(self):
+        return sorted(set(self._value.values))
+
+    @property
+    def values(self):
+        return list(self._value.values)
+
+    @property
+    def value(self):
+        v = self.values
+        assert len(v) == 1
+        return v[0]
+
+    def query(self, pred):
+        pred = _desugar(pred)
+        return _Queryable(_query(pred, self._value))
+
+    def upto(self, pred):
+        pred = _desugar(pred)
+        value = self._value
+
+        if not isinstance(value, list):
+            value = [value]
+
+        seen = set()
+        res = List()
+        for v in value:
+            p = v.parent
+            while p is not None and p not in seen:
+                gp = p.parent
+                if isinstance(gp, list):
+                    gp = gp.parent
+                if gp is not None:
+                    r = _query(pred, gp)
+                    if r:
+                        seen.add(p)
+                        res.append(p)
+                        break
+                    else:
+                        p = p.parent
+                else:
+                    p = p.parent
+        return _Queryable(res)
+
+    def find(self, first, *rest):
+        first = _desugar(first)
+        queries = [_desugar(arg) for arg in rest]
+
+        def match(node):
+            if not isinstance(node, (Dict, List, Result)):
+                return Result()
+
+            res = _query(first, node)
+            for q in queries:
+                if res:
+                    res = _query(q, res)
+                else:
+                    break
+            return res
+
+        res = Result()
+        for node in _flatten(self._value):
+            res.extend(match(node))
+        return _Queryable(res)
+
+    def where(self, name, value=None):
+        obj = self._value
+        if isinstance(obj, Dict):
+            obj = obj.values()
+        elif isinstance(obj, Result):
+            obj = obj.grandchildren
+
+        res = List()
+
+        if isinstance(name, WhereBoolean):
+            qry = name
+        elif isinstance(name, Boolean):
+            qry = WhereQuery(name, value)
+        elif callable(name):
+            def inner(value):
+                if name(_Queryable(value)):
+                    return value
+
+            for i in obj:
+                res.extend(_query(inner, i))
+            return _Queryable(res)
+        else:
+            qry = WhereQuery(name, value)
+
+        def inner(value):
+            if qry.test(value):
+                return value
+
+        for i in obj:
+            res.extend(_query(inner, i))
+        return _Queryable(res)
+
+    def to_df(self):
+        import pandas
+        return pandas.DataFrame(self.values)
+
+    def most_common(self, n=None):
+        return Counter(self.values).most_common(n)
+
+    def __iter__(self):
+        for i in self._value:
+            yield _Queryable(i)
+
+    def __len__(self):
+        return len(self._value)
+
+    def __nonzero__(self):
+        return bool(self._value)
+
+    __bool__ = __nonzero__
+
+    def __dir__(self):
+        return self.keys() + dir(object)
+
+    def __getattr__(self, name):
+        return self.__getitem__(name)
+
+    def __getitem__(self, pred):
+        if isinstance(pred, slice):
+            return _Queryable(Result(self._value[pred]))
+        if isinstance(pred, int):
+            return _Queryable(Result([self._value[pred]]))
+        return self.query(pred)
+
+    def __lt__(self, other):
+        try:
+            return self.value < other.value
+        except:
+            return False
+
+    def __le__(self, other):
+        try:
+            return self.value <= other.value
+        except:
+            return False
 
     def __eq__(self, other):
         try:
-            return self.uid == other.uid
+            return self.value == other.value
+        except:
+            return False
+
+    def __ne__(self, other):
+        try:
+            return self.value != other.value
+        except:
+            return False
+
+    def __ge__(self, other):
+        try:
+            return self.value >= other.value
+        except:
+            return False
+
+    def __gt__(self, other):
+        try:
+            return self.value > other.value
+        except:
+            return False
+
+    def matches(self, pattern, flags=0):
+        try:
+            return re.search(pattern, self.value, flags)
+        except:
+            return False
+
+    def isin(self, values):
+        try:
+            return self.value in values
+        except:
+            return False
+
+    def contains(self, value):
+        try:
+            return value in self.value
+        except:
+            return False
+
+    def startswith(self, value):
+        try:
+            return self.value.startswith(value)
+        except:
+            return False
+
+    def endswith(self, value):
+        try:
+            return self.value.endswith(value)
         except:
             return False
 
     def __repr__(self):
-        name = self.__class__.__name__
-        return f"{name}({super().__repr__()})"
+        return yaml.dump(self._value, Dumper=_Dumper)
 
 
-class List(CollectionBase, list):
-    """ A list that remembers the data structure to which it belongs. """
-
-    pass
-
-
-def List_representer(dumper, data):
-    # https://yaml.org/type/seq.html
-    return dumper.represent_sequence("tag:yaml.org,2002:seq", data)
-
-
-yaml.add_representer(List, List_representer, Dumper=yaml.Dumper)
-yaml.add_representer(List, List_representer, Dumper=_Dumper)
-if _Dumper is not yaml.SafeDumper:
-    yaml.add_representer(List, List_representer, Dumper=yaml.SafeDumper)
+def make_model(d, parent=None):
+    if isinstance(d, list):
+        node = List(parent=parent)
+        node.extend(make_model(v, parent=node) for v in d)
+        return node
+    elif isinstance(d, dict):
+        node = Dict(parent=parent)
+        for k, v in d.items():
+            node[k] = make_model(v, parent=node)
+        return node
+    else:
+        return d
 
 
-class Dict(CollectionBase, dict):
-    """ A dict that remembers the data structure to which it belongs. """
+convert = make_model
+from_dict = make_model
 
-    pass
+
+def Queryable(data):
+    if not isinstance(data, (List, Dict, Result)):
+        data = make_model(data)
+    return _Queryable(data)
+
+
+def from_yaml(path):
+    with open(path) as f:
+        return Queryable(yaml.load(f, Loader=_Loader))
 
 
 def Dict_representer(dumper, data):
@@ -81,575 +566,18 @@ if _Dumper is not yaml.SafeDumper:
     yaml.add_representer(Dict, Dict_representer, Dumper=yaml.SafeDumper)
 
 
-def _desugar_part(x):
-    if isinstance(x, Boolean):
-        return x
-    if callable(x):
-        return pred(x)
-    return eq(x)
+def List_representer(dumper, data):
+    # https://yaml.org/type/seq.html
+    return dumper.represent_sequence("tag:yaml.org,2002:seq", data)
 
 
-def get_roots(data):
-    results = List()
-    seen = set()
+yaml.add_representer(List, List_representer, Dumper=yaml.Dumper)
+yaml.add_representer(List, List_representer, Dumper=_Dumper)
+if _Dumper is not yaml.SafeDumper:
+    yaml.add_representer(List, List_representer, Dumper=yaml.SafeDumper)
 
-    def inner(d):
-        if not d.parents and d not in seen:
-            results.append(d)
-            seen.add(d)
-        else:
-            for p in d.parents:
-                if p not in seen:
-                    inner(p)
-                seen.add(p)
 
-    if data.parents:
-        inner(data)
-    return results
-
-
-class _Queryable:
-    __slots__ = ["value"]
-
-    def __init__(self, value):
-        self.value = value
-
-    def keys(self):
-        keys = []
-        seen = set()
-
-        def inner(val):
-            if isinstance(val, Dict):
-                new = val.keys() - seen
-                keys.extend(new)
-                seen.update(new)
-
-            if isinstance(val, List):
-                for i in val:
-                    try:
-                        new = i.keys() - seen
-                        keys.extend(new)
-                        seen.update(new)
-                    except:
-                        inner(i)
-
-        inner(self.value)
-        return sorted(set(keys))
-
-    def most_common(self, top=None):
-        return Counter(self.value).most_common(top)
-
-    def unique(self):
-        return sorted(set(self.value))
-
-    def sum(self):
-        return sum(v for v in self.value if v is not None)
-
-    def to_dataframe(self):
-        import pandas
-
-        return pandas.DataFrame(self.value)
-
-    def startswith(self, val):
-        try:
-            return self.value[0].startswith(val)
-        except:
-            return False
-
-    def endswith(self, val):
-        try:
-            return self.value[0].endswith(val)
-        except:
-            return False
-
-    def matches(self, val, flags=None):
-        try:
-            return re.search(val, self.value[0], flags=flags)
-        except:
-            return False
-
-    def __eq__(self, other):
-        if not isinstance(other, CollectionBase):
-            l = List()
-            l.append(other)
-            other = Queryable(l)
-
-        if not (self and other):
-            return False
-
-        if len(self) != len(other):
-            return False
-
-        for i in range(len(self)):
-            if self.value[i] != other.value[i]:
-                return False
-        return True
-
-    def __ne__(self, other):
-        if not (self and other):
-            return False
-        return not self == other
-
-    def _compare(self, op, other):
-        """
-        Manual comparison since we've overloaded __eq__ on CollectionBase.
-        """
-        if not isinstance(other, CollectionBase):
-            l = List()
-            l.append(other)
-            other = Queryable(l)
-
-        if not (self and other):
-            return False
-
-        try:
-            for i in range(len(self.value)):
-                if op(self.value[i], other.value[i]):
-                    continue
-                else:
-                    return False
-            return True
-        except:
-            return False
-
-    def __gt__(self, other):
-        return self._compare(operator.gt, other)
-
-    def __ge__(self, other):
-        return self._compare(operator.ge, other)
-
-    def __lt__(self, other):
-        return self._compare(operator.lt, other)
-
-    def __le__(self, other):
-        return self._compare(operator.le, other)
-
-    def __add__(self, other):
-        value = List()
-        for i in (self, other):
-            i = Queryable(i)
-            if isinstance(i.value, List):
-                value.extend(i.value)
-            else:
-                value.append(i.value)
-        return _Queryable(value)
-
-    def _iadd(self, other):
-        if not isinstance(self.value, List):
-            self.value = List(self.value)
-
-        other = Queryable(other)
-        if isinstance(other, List):
-            self.value.extend(other.value)
-        else:
-            self.value.append(other.value)
-
-    @property
-    def parents(self):
-        gp = []
-        seen = set()
-        for p in self.value.parents:
-            for g in p.parents:
-                if g not in seen:
-                    gp.append(g)
-                    seen.add(g)
-        return _Queryable(List(self.value.parents, parents=gp))
-
-    @property
-    def roots(self):
-        return _Queryable(get_roots(self.value))
-
-    @property
-    def sources(self):
-        roots = get_roots(self.value)
-        sources = [r.source for r in roots if r.source]
-        if sources:
-            return sources
-
-        return [v.source for v in self.value if v.source]
-
-    def upto(self, query):
-        results = List()
-        seen = set()
-
-        def inner(val):
-            for parent in val.parents:
-                if isinstance(parent.value, Dict):
-                    r = parent[query]
-                else:
-                    r = parent.parents[query]
-
-                if r:
-                    if isinstance(val.value, Dict):
-                        results.append(val.value)
-                    else:
-                        results.extend(val.value)
-
-                    for p in r.value.parents:
-                        if p not in seen:
-                            results.parents.append(p)
-                            seen.add(p)
-                else:
-                    inner(parent)
-
-        inner(self)
-        return _Queryable(results)
-
-    def find(self, *args):
-        results = List()
-        queries = [self._desugar(a) for a in args]
-        seen = set()
-
-        def run_queries(node):
-            n = node
-            for q in queries:
-                if n.value:
-                    n = n._handle_child_query(q)
-                else:
-                    break
-
-            if n.value:
-                results.extend(n.value)
-                for p in n.value.parents:
-                    if p not in seen:
-                        results.parents.append(p)
-                        seen.add(p)
-
-            if isinstance(node.value, Dict):
-                for i in node.value.values():
-                    if isinstance(i, CollectionBase):
-                        run_queries(_Queryable(i))
-            elif isinstance(node.value, List):
-                for i in node.value:
-                    if isinstance(i, List):
-                        run_queries(_Queryable(i))
-                    # we've already picked out values from the dicts above, so
-                    # we recurse on their values instead of the individual
-                    # dicts directly. Otherwise, we'd double collect those that
-                    # hit - once as members of the original list and once
-                    # individually.
-                    elif isinstance(i, Dict):
-                        for v in i.values():
-                            run_queries(_Queryable(v))
-
-        run_queries(self)
-        return _Queryable(results)
-
-    def __getattr__(self, key):
-        # allow dot traversal for simple key names.
-        return self.__getitem__(key)
-
-    def __dir__(self):
-        # jedi in doesn't tab complete when __getattr__ is defined b/c it could
-        # execute arbitrary code. So.. throw caution to the wind.
-
-        # import IPython
-        # from traitlets.config.loader import Config
-
-        # IPython.core.completer.Completer.use_jedi = False
-        # c = Config()
-        # IPython.start_ipython([], user_ns=locals(), config=c)
-        return self.keys()
-
-    def __len__(self):
-        return len(self.value)
-
-    def __bool__(self):
-        return bool(self.value)
-
-    def __iter__(self):
-        for i in self.value:
-            yield _Queryable(i)
-
-    def _handle_child_query(self, query):
-        def inner(val):
-            if isinstance(val, Dict):
-                r = query(val)
-                if r:
-                    return List(r, parents=[val])
-                return List()
-            elif isinstance(val, List):
-                results = List()
-                for i in val:
-                    r = inner(i) if isinstance(i, List) else query(i)
-                    if r:
-                        results.parents.append(i)
-                        results.extend(r)
-                return results
-            return List()
-
-        return _Queryable(inner(self.value))
-
-    def _desugar_tuple_query(self, key):
-        value = self.value
-        name_part, value_part = key
-        value_query = _desugar_part(value_part) if value is not ANY else TRUE
-
-        if name_part is ANY:
-
-            def query(val):
-                results = []
-                try:
-                    for v in val.values():
-                        if isinstance(v, list):
-                            for i in v:
-                                if value_query.test(i):
-                                    results.append(i)
-                        else:
-                            if value_query.test(v):
-                                results.append(v)
-                except:
-                    return []
-                return results
-
-        elif not callable(name_part):
-
-            def query(val):
-                try:
-                    v = val[name_part]
-                    if value_query.test(v):
-                        if isinstance(v, list):
-                            results = []
-                            for i in v:
-                                if value_query.test(i):
-                                    results.append(i)
-                            return results
-                        else:
-                            return [v] if value_query.test(v) else []
-                except:
-                    return []
-
-        else:
-            name_query = _desugar_part(name_part)
-
-            def query(val):
-                results = []
-                try:
-                    for k, v in val.items():
-                        if name_query.test(k):
-                            if isinstance(v, list):
-                                for i in v:
-                                    if value_query.test(i):
-                                        results.append(i)
-                            else:
-                                if value_query.test(v):
-                                    results.append(v)
-                except:
-                    return []
-                return results
-
-        return query
-
-    def _desugar_name_query(self, key):
-        if key is ANY:
-
-            def query(val):
-                results = []
-                try:
-                    for v in val.values():
-                        if isinstance(v, list):
-                            results.extend(v)
-                        else:
-                            results.append(v)
-                except:
-                    return []
-                return results
-
-        elif not callable(key):
-
-            def query(val):
-                try:
-                    r = val[key]
-                    return r if isinstance(r, list) else [r]
-                except:
-                    return []
-
-        else:
-            name_query = _desugar_part(key)
-
-            def query(val):
-                results = []
-                try:
-                    for k, v in val.items():
-                        if name_query.test(k):
-                            if isinstance(v, list):
-                                results.extend(v)
-                            else:
-                                results.append(v)
-                except:
-                    return []
-                return results
-
-        return query
-
-    def _desugar(self, key):
-        if isinstance(key, tuple):
-            return self._desugar_tuple_query(key)
-        return self._desugar_name_query(key)
-
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            return Queryable(self.value[key])
-
-        if isinstance(key, slice):
-            vals = List(self.value[key])
-            seen = set()
-            for v in vals:
-                for p in v.parents:
-                    if p not in seen:
-                        vals.parents.append(p)
-                        seen.add(p)
-            return Queryable(vals)
-
-        query = self._desugar(key)
-        return self._handle_child_query(query)
-
-    def _handle_where_query(self, query):
-        seen = set()
-
-        def inner(val):
-            results = List()
-            for i in val:
-                if isinstance(i, List):
-                    r = inner(i)
-                    if r:
-                        results.append(i)
-                        for p in i.parents:
-                            if p not in seen:
-                                results.parents.append(p)
-                                seen.add(p)
-                elif query(i):
-                    results.append(i)
-                    for p in i.parents:
-                        if p not in seen:
-                            results.parents.append(p)
-                            seen.add(p)
-            return results
-
-        return _Queryable(inner(self.value))
-
-    def _desugar_where(self, query, value):
-        # if value is defined, the caller didn't bother to make a WhereQuery
-        if value is not ANY:
-            query = WhereQuery(query, value)
-
-            def runquery(val):
-                return query.test(val)
-
-        # query already contains WhereQuery instances. We check for Boolean
-        # because query might some combination of WhereQuerys.
-        elif isinstance(query, Boolean):
-
-            def runquery(val):
-                return query.test(val)
-
-        # value is not defined, and query is not a WhereQuery. If query is a
-        # callable, it's just a regular function or lambda. We assume the
-        # caller wants to manually inspect each item.
-        elif callable(query):
-
-            def runquery(val):
-                try:
-                    return query(_Queryable(val))
-                except:
-                    return False
-
-        # this handles the case where the caller wants to simply check for the
-        # existence of a key without needing to construct a WhereQuery. Because
-        # of the above checks, query here can be only a primitive value.
-        else:
-            query = WhereQuery(query)
-
-            def runquery(val):
-                return query.test(val)
-
-        return runquery
-
-    def where(self, query, value=ANY):
-        """
-        Accepts WhereQuery instances, combinations of WhereQuery instances, or
-        a callable that will be passed a Queryable version of each item. Where
-        queries only make sense against lists.
-        """
-
-        runquery = self._desugar_where(query, value)
-        return self._handle_where_query(runquery)
-
-    def __repr__(self):
-        return yaml.dump(self.value, Dumper=_Dumper)
-
-
-class WhereQuery(Boolean):
-    """
-    Used to combine predicates for multiple keys in a dictionary.
-
-    conf.find("conditions").where(q("status", "True") & q("message", matches("error|fail")))
-    Only use in where queries.
-    """
-
-    def __init__(self, name_part, value_part=ANY):
-        value_query = _desugar_part(value_part) if value_part is not ANY else TRUE
-
-        if name_part is ANY:
-            self.query = lambda val: any(value_query.test(v) for v in val.values())
-        elif not callable(name_part):
-            self.query = (
-                lambda val: value_query.test(val[name_part])
-                if name_part in val
-                else False
-            )
-        else:
-            name_query = _desugar_part(name_part)
-            self.query = lambda val: any(
-                name_query.test(k) and value_query.test(v) for k, v in val.items()
-            )
-
-    def test(self, value):
-        try:
-            return self.query(value)
-        except:
-            return False
-
-
-q = WhereQuery
-
-
-def convert(data, parent=None):
-    """
-    Convert nest of dicts and lists into Dicts and Lists that contain
-    pointers to their parents.
-    """
-    if isinstance(data, dict):
-        d = Dict(parents=[parent] if parent is not None else [])
-        d.update({k: convert(v, parent=d) for k, v in data.items()})
-        return d
-
-    if isinstance(data, list):
-        l = List(parents=[parent] if parent is not None else [])
-        l.extend(convert(i, parent=l) for i in data)
-        return l
-
-    return data
-
-
-def Queryable(data=None):
-    """ Use this function to make your data queryable. """
-    if data is None:
-        return _Queryable(List())
-
-    if isinstance(data, _Queryable):
-        return data
-
-    if isinstance(data, CollectionBase):
-        return _Queryable(data)
-
-    return _Queryable(convert(data))
-
-
-def from_yaml(path):
-    try:
-        with open(path) as f:
-            return Queryable(yaml.load(f, Loader=_Loader))
-    except:
-        return Queryable(yaml.load(path, Loader=_Loader))
-
+yaml.add_representer(Result, List_representer, Dumper=yaml.Dumper)
+yaml.add_representer(Result, List_representer, Dumper=_Dumper)
+if _Dumper is not yaml.SafeDumper:
+    yaml.add_representer(Result, List_representer, Dumper=yaml.SafeDumper)

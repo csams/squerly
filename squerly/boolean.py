@@ -33,9 +33,6 @@ class Boolean:
     def test(self, value):
         raise NotImplementedError()
 
-    def __call__(self, value):
-        return self.test(value)
-
     def __and__(self, other):
         return All(self, other)
 
@@ -82,7 +79,8 @@ class Predicate(Boolean):
         try:
             return self.predicate(value, *self.args, **self.kwargs)
         except Exception as ex:
-            log.debug(ex)
+            if log.isEnabledFor(logging.DEBUG):
+                log.debug(ex)
             return False
 
     def __repr__(self):
@@ -111,8 +109,13 @@ class TRUE(Boolean):
         return True
 
 
+class FALSE(Boolean):
+    def test(self, value):
+        return False
+
+
 TRUE = TRUE()
-FALSE = Not(TRUE)
+FALSE = FALSE()
 
 lt = pred(operator.lt)
 le = pred(operator.le)
