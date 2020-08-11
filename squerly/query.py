@@ -138,8 +138,8 @@ q = WhereQuery
 
 def _desugar(query):
     """
-    returns a function that accepts a dict and returns
-    all name value pairs from it that match the query.
+    returns a function that accepts a dict and returns a dict of all name
+    value pairs from it that match the query.
     """
     if isinstance(query, tuple):
         name, value = query
@@ -158,8 +158,6 @@ def _desugar(query):
                         res[k] = v
                 return Dict(res, parent=node)
 
-            return inner
-
         elif isinstance(name, Boolean):
 
             def inner(node):
@@ -168,8 +166,6 @@ def _desugar(query):
                     if name.test(k) and v == value:
                         res[k] = v
                 return Dict(res, parent=node)
-
-            return inner
 
         elif isinstance(value, Boolean):
             if name is ANY:
@@ -192,8 +188,6 @@ def _desugar(query):
                     except:
                         return Dict({}, parent=node)
 
-            return inner
-
         else:
 
             def inner(node):
@@ -205,10 +199,10 @@ def _desugar(query):
                 except:
                     return Dict({}, parent=node)
 
-            return inner
-
     elif query is ANY:
-        return lambda node: node
+
+        def inner(node):
+            return node
 
     elif isinstance(query, Boolean):
 
@@ -218,8 +212,6 @@ def _desugar(query):
                 if query.test(k):
                     res[k] = v
             return Dict(res, parent=node)
-
-        return inner
 
     elif callable(query):
 
@@ -233,8 +225,6 @@ def _desugar(query):
                     pass
             return Dict(res, parent=node)
 
-        return inner
-
     else:
 
         def inner(node):
@@ -243,7 +233,7 @@ def _desugar(query):
             except:
                 return Dict({}, parent=node)
 
-        return inner
+    return inner
 
 
 def _query(pred, value):
@@ -374,7 +364,7 @@ class _Queryable:
                 gp = p.parent
                 if isinstance(gp, list):
                     gp = gp.parent
-                if gp is seen:
+                if gp is seen and seen is not None:
                     res.append(p)
                     break
                 if gp is not None:
