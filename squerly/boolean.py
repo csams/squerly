@@ -83,9 +83,6 @@ class Predicate(Boolean):
                 log.debug(ex)
             return False
 
-    def __repr__(self):
-        return f"Predicate({self.predicate})"
-
 
 def pred(predicate, *args, **kwargs):
     return partial(Predicate, predicate)

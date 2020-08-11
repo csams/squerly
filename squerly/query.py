@@ -27,9 +27,7 @@ ANY = None
 
 class _Base(object):
     """
-    Base class for primitive Dicts and Lists we'll use to build models. They
-    have parent pointers and have __hash__ and __eq__ overwritten so they can
-    be deduplicated.
+    Base class for primitive Dicts and Lists we'll use to build models.
     """
 
     def __init__(self, data=None, parent=None):
@@ -38,12 +36,6 @@ class _Base(object):
         else:
             super(_Base, self).__init__()
         self.parent = parent
-
-    def __hash__(self):
-        return super(object, self).__hash__()
-
-    def __eq__(self, value):
-        return super(object, self).__eq__(value)
 
 
 class Dict(_Base, dict):
@@ -66,15 +58,18 @@ class Result(list):
     def grandchildren(self):
         for v in self:
             if isinstance(v, Dict):
-                yield from v.values()
+                for i in v.values():
+                    yield i
             elif isinstance(v, List):
-                yield from v
+                for i in v:
+                    yield i
 
     @property
     def values(self):
         for v in self.grandchildren:
             if isinstance(v, List):
-                yield from v
+                for i in v:
+                    yield i
             else:
                 yield v
 
@@ -132,7 +127,7 @@ class WherePred(WhereBoolean):
 
 class WhereQuery(WherePred):
     def __init__(self, name, value=None):
-        super().__init__(_desugar(name if value is None else (name, value)))
+        super(WhereQuery, self).__init__(_desugar(name if value is None else (name, value)))
 
 
 make_child_query = WhereQuery
@@ -258,10 +253,12 @@ def _flatten(obj):
     if isinstance(obj, Dict):
         yield obj
         for v in obj.values():
-            yield from _flatten(v)
+            for i in _flatten(v):
+                yield i
     elif isinstance(obj, (List, Result)):
         for v in obj:
-            yield from _flatten(v)
+            for i in _flatten(v):
+                yield i
     else:
         yield obj
 
@@ -283,11 +280,11 @@ class _Queryable:
         res = set()
         for i in obj:
             try:
-                res |= i.keys()
+                res |= set(i.keys())
             except:
                 try:
                     for v in i:
-                        res |= v.keys()
+                        res |= set(v.keys())
                 except:
                     pass
         return sorted(res)
@@ -300,30 +297,30 @@ class _Queryable:
         if isinstance(value, Dict):
             return _Queryable(List([value.parent.parent]))
 
-        seen = set()
+        seen = None
         res = List()
         for v in value:
             p = v.parent
             while isinstance(p, list):
                 p = p.parent
-            if p is not None and p not in seen:
+            if p is not None and p is not seen:
                 res.append(p)
-                seen.add(p)
+                seen = p
         return _Queryable(res)
 
     @property
     def roots(self):
         value = self._value if isinstance(self._value, list) else [self._value]
         res = List()
-        seen = set()
+        seen = None
         for v in value:
             if isinstance(v, Dict):
                 p = v
                 while p.parent is not None:
                     p = p.parent
-                if p not in seen:
+                if p is not seen:
                     res.append(p)
-                    seen.add(p)
+                    seen = p
         return _Queryable(res)
 
     @property
@@ -351,24 +348,24 @@ class _Queryable:
         if not isinstance(value, list):
             value = [value]
 
-        seen = set()
+        seen = None
         res = List()
         for v in value:
             p = v.parent
-            while p is not None and p not in seen:
+            while p is not None and p is not seen:
                 gp = p.parent
                 if isinstance(gp, list):
                     gp = gp.parent
+                if gp is seen:
+                    res.append(p)
+                    break
                 if gp is not None:
                     r = _query(pred, gp)
                     if r:
-                        seen.add(p)
                         res.append(p)
+                        seen = gp
                         break
-                    else:
-                        p = p.parent
-                else:
-                    p = p.parent
+                p = p.parent
         return _Queryable(res)
 
     def find(self, first, *rest):
