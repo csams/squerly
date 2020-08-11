@@ -127,7 +127,9 @@ class WherePred(WhereBoolean):
 
 class WhereQuery(WherePred):
     def __init__(self, name, value=None):
-        super(WhereQuery, self).__init__(_desugar(name if value is None else (name, value)))
+        super(WhereQuery, self).__init__(
+            _desugar(name if value is None else (name, value))
+        )
 
 
 make_child_query = WhereQuery
@@ -148,32 +150,39 @@ def _desugar(query):
             value = pred(value)
 
         if isinstance(name, Boolean) and isinstance(value, Boolean):
+
             def inner(node):
                 res = {}
                 for k, v in node.items():
                     if name.test(k) and value.test(v):
                         res[k] = v
                 return Dict(res, parent=node)
+
             return inner
 
         elif isinstance(name, Boolean):
+
             def inner(node):
                 res = {}
                 for k, v in node.items():
                     if name.test(k) and v == value:
                         res[k] = v
                 return Dict(res, parent=node)
+
             return inner
 
         elif isinstance(value, Boolean):
             if name is ANY:
+
                 def inner(node):
                     res = {}
                     for k, v in node.items():
                         if value.test(v):
                             res[k] = v
                     return Dict(res, parent=node)
+
             else:
+
                 def inner(node):
                     try:
                         v = node[name]
@@ -182,9 +191,11 @@ def _desugar(query):
                         return Dict({}, parent=node)
                     except:
                         return Dict({}, parent=node)
+
             return inner
 
         else:
+
             def inner(node):
                 try:
                     v = node[name]
@@ -193,21 +204,25 @@ def _desugar(query):
                     return Dict({}, parent=node)
                 except:
                     return Dict({}, parent=node)
+
             return inner
 
     elif query is ANY:
         return lambda node: node
 
     elif isinstance(query, Boolean):
+
         def inner(node):
             res = {}
             for k, v in node.items():
                 if query.test(k):
                     res[k] = v
             return Dict(res, parent=node)
+
         return inner
 
     elif callable(query):
+
         def inner(node):
             res = {}
             for k, v in node.items():
@@ -217,14 +232,17 @@ def _desugar(query):
                 except:
                     pass
             return Dict(res, parent=node)
+
         return inner
 
     else:
+
         def inner(node):
             try:
                 return Dict({query: node[query]}, parent=node)
             except:
                 return Dict({}, parent=node)
+
         return inner
 
 
@@ -403,6 +421,7 @@ class _Queryable:
         elif isinstance(name, Boolean):
             qry = WhereQuery(name, value)
         elif callable(name):
+
             def inner(value):
                 if name(_Queryable(value)):
                     return value
@@ -423,6 +442,7 @@ class _Queryable:
 
     def to_df(self):
         import pandas
+
         return pandas.DataFrame(self.values)
 
     def most_common(self, n=None):
