@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     setup(
         name="squerly",
-        version="0.1.2",
+        version="0.2.0",
         description="Squerly takes the tedium out of nested dicts and lists.",
         long_description=long_description,
         long_description_content_type="text/markdown",
@@ -57,6 +57,7 @@ if __name__ == "__main__":
             "Natural Language :: English",
             "License :: OSI Approved :: Apache Software License",
             "Programming Language :: Python",
+            "Programming Language :: Python :: 2.7",
             "Programming Language :: Python :: 3.6",
             "Programming Language :: Python :: 3.7",
             "Programming Language :: Python :: 3.8"
