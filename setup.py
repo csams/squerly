@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     setup(
         name="squerly",
-        version="0.2.1",
+        version="0.2.2",
         description="Squerly takes the tedium out of nested dicts and lists.",
         long_description=long_description,
         long_description_content_type="text/markdown",
