@@ -18,8 +18,13 @@ __all__ = [
     "q",
 ]
 
-_Dumper = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
 _Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+_BaseDumper = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
+
+
+class _Dumper(_BaseDumper):
+    def ignore_aliases(self, *args):
+        return True
 
 
 ANY = None
@@ -36,6 +41,13 @@ class _Base(object):
         else:
             super(_Base, self).__init__()
         self.parent = parent
+        self._hash = object.__hash__(self)
+
+    def __hash__(self):
+        return self._hash
+
+    def __eq__(self, other):
+        return self is other
 
 
 class Dict(_Base, dict):
@@ -53,6 +65,13 @@ class Result(list):
 
     def __len__(self):
         return len(list(self.values))
+
+    def __bool__(self):
+        try:
+            next(self.values)
+            return True
+        except:
+            return False
 
     @property
     def grandchildren(self):
@@ -271,6 +290,31 @@ def _flatten(obj):
         yield obj
 
 
+def _ancestors(node):
+    p = node.parent
+    while p is not None:
+        yield p
+        p = p.parent
+
+
+def _ancestor_dicts(node):
+    """
+    Travel up parents yielding each one that is a dictionary.
+    """
+    for a in _ancestors(node):
+        if not isinstance(a, list):
+            yield a
+
+
+def _ancestor_pairs(node):
+    ps = _ancestor_dicts(node)
+    gps = _ancestor_dicts(node)
+    next(gps)
+    for g in gps:
+        p = next(ps)
+        yield (g, p)
+
+
 class _Queryable:
     __slots__ = ["_value"]
 
@@ -301,34 +345,30 @@ class _Queryable:
 
     @property
     def parents(self):
-        value = self._value
-        if isinstance(value, Dict):
-            return _Queryable(List([value.parent.parent]))
-
-        seen = None
+        value = self._value if isinstance(self._value, list) else self._value
+        seen = set()
         res = List()
         for v in value:
             p = v.parent
-            while isinstance(p, list):
+            if isinstance(p, list):
                 p = p.parent
-            if p is not None and p is not seen:
+            if p is not None and p not in seen:
+                seen.add(p)
                 res.append(p)
-                seen = p
         return _Queryable(res)
 
     @property
     def roots(self):
         value = self._value if isinstance(self._value, list) else [self._value]
         res = List()
-        seen = None
+        seen = set()
         for v in value:
-            if isinstance(v, Dict):
-                p = v
-                while p.parent is not None:
-                    p = p.parent
-                if p is not seen:
-                    res.append(p)
-                    seen = p
+            p = v
+            while p.parent is not None:
+                p = p.parent
+            if p is not None and p not in seen:
+                res.append(p)
+                seen.add(p)
         return _Queryable(res)
 
     @property
@@ -351,29 +391,17 @@ class _Queryable:
 
     def upto(self, pred):
         pred = _desugar(pred)
-        value = self._value
+        value = self._value if isinstance(self._value, list) else [self._value]
 
-        if not isinstance(value, list):
-            value = [value]
-
-        seen = None
+        seen = set()
         res = List()
         for v in value:
-            p = v.parent
-            while p is not None and p is not seen:
-                gp = p.parent
-                if isinstance(gp, list):
-                    gp = gp.parent
-                if gp is seen and seen is not None:
-                    res.append(p)
-                    break
-                if gp is not None:
-                    r = _query(pred, gp)
-                    if r:
+            for gp, p in _ancestor_pairs(v):
+                r = _query(pred, gp)
+                if r and p not in seen:
+                    if set(_ancestors(v)) & set(r.grandchildren):
+                        seen.add(p)
                         res.append(p)
-                        seen = gp
-                        break
-                p = p.parent
         return _Queryable(res)
 
     def find(self, first, *rest):
@@ -554,6 +582,9 @@ from_dict = make_model
 def Queryable(data):
     if not isinstance(data, (List, Dict, Result)):
         data = make_model(data)
+#    if isinstance(data, Dict):
+#        data.parent = List()
+#        data.parent.append(data)
     return _Queryable(data)
 
 
@@ -568,6 +599,7 @@ def Dict_representer(dumper, data):
 
 
 yaml.add_representer(Dict, Dict_representer, Dumper=yaml.Dumper)
+yaml.add_representer(Dict, Dict_representer, Dumper=_BaseDumper)
 yaml.add_representer(Dict, Dict_representer, Dumper=_Dumper)
 if _Dumper is not yaml.SafeDumper:
     yaml.add_representer(Dict, Dict_representer, Dumper=yaml.SafeDumper)
@@ -579,12 +611,14 @@ def List_representer(dumper, data):
 
 
 yaml.add_representer(List, List_representer, Dumper=yaml.Dumper)
+yaml.add_representer(List, List_representer, Dumper=_BaseDumper)
 yaml.add_representer(List, List_representer, Dumper=_Dumper)
 if _Dumper is not yaml.SafeDumper:
     yaml.add_representer(List, List_representer, Dumper=yaml.SafeDumper)
 
 
 yaml.add_representer(Result, List_representer, Dumper=yaml.Dumper)
+yaml.add_representer(Result, List_representer, Dumper=_BaseDumper)
 yaml.add_representer(Result, List_representer, Dumper=_Dumper)
 if _Dumper is not yaml.SafeDumper:
     yaml.add_representer(Result, List_representer, Dumper=yaml.SafeDumper)
